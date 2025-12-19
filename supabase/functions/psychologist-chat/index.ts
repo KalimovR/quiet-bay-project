@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -41,6 +42,8 @@ const MEDITATION_TECHNIQUES_FULL = `
 
 Когда пользователь спрашивает о медитации или техниках расслабления, подбери подходящую технику на основе его запроса и личности. Объясни принципы и предложи попробовать.
 `;
+
+
 
 // Limited meditation techniques for free users (30% - only 3 techniques)
 const MEDITATION_TECHNIQUES_LIMITED = `
@@ -245,6 +248,58 @@ const SYSTEM_PROMPT = `
 Отвечай только на русском языке.
 `;
 
+// ===== INTERNAL STATE → RESPONSE STYLE =====
+
+const RESPONSE_STYLE_FILTER = {
+  emptiness: {
+    maxLength: 3,
+    allowQuestions: false,
+    allowTechniques: false,
+    tone: "presence",
+  },
+
+  stupor: {
+    maxLength: 2,
+    allowQuestions: false,
+    allowTechniques: false,
+    tone: "slow",
+  },
+
+  grief: {
+    maxLength: 4,
+    allowQuestions: true,
+    allowTechniques: false,
+    tone: "warm",
+  },
+
+  anxiety: {
+    maxLength: 5,
+    allowQuestions: true,
+    allowTechniques: true,
+    tone: "calm",
+  },
+
+  irritation: {
+    maxLength: 6,
+    allowQuestions: true,
+    allowTechniques: true,
+    tone: "grounded",
+  },
+} as const;
+
+function detectState(message: string): keyof typeof RESPONSE_STYLE_FILTER | null {
+  const text = message.toLowerCase();
+
+  if (text.includes("пусто") || text.includes("пустота")) return "emptiness";
+  if (text.includes("не знаю") || text.includes("ступор")) return "stupor";
+  if (text.includes("грусть") || text.includes("тяжело")) return "grief";
+  if (text.includes("тревож") || text.includes("страшно")) return "anxiety";
+  if (text.includes("злюсь") || text.includes("раздраж")) return "irritation";
+
+  return null;
+}
+
+
 // Subscription tier context for AI (invisible to user)
 const getSubscriptionContext = (tier: string) => {
   switch (tier) {
@@ -428,6 +483,18 @@ serve(async (req) => {
 
   try {
     const { messages, userTier } = await req.json();
+
+    const lastUserMessage =
+  messages
+    .filter((m: any) => m.role === "user")
+    .at(-1)?.content || "";
+
+const detectedState = detectState(lastUserMessage);
+const styleRules = detectedState
+  ? RESPONSE_STYLE_FILTER[detectedState]
+  : null;
+
+    
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     
     if (!LOVABLE_API_KEY) {
@@ -435,24 +502,37 @@ serve(async (req) => {
     }
 
     const subscriptionContext = getSubscriptionContext(userTier || 'free');
-    const fullSystemPrompt = SYSTEM_PROMPT + subscriptionContext;
+    
 
     console.log("Sending request to Lovable AI with messages:", messages.length, "userTier:", userTier);
 
+    const finalPrompt = `
+    ${SYSTEM_PROMPT}
+    
+    ${subscriptionContext}
+    
+    ВНУТРЕННИЕ НАСТРОЙКИ (НЕ ОЗВУЧИВАТЬ ПОЛЬЗОВАТЕЛЮ):
+    ${styleRules ? JSON.stringify(styleRules) : "Стандартный режим"}
+    
+    Последнее сообщение пользователя:
+    "${lastUserMessage}"
+    `;
+    
+    
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${LOVABLE_API_KEY}`,
         "Content-Type": "application/json",
       },
-       body: JSON.stringify({
-         model: "openai/gpt-5-mini",
-         messages: [
-           { role: "system", content: fullSystemPrompt },
-           ...messages,
-         ],
-         max_completion_tokens: 1536,
-       }),
+      
+      body: JSON.stringify({
+        model: "openai/gpt-5-mini",
+        messages: [
+          { role: "system", content: finalPrompt },
+          ...messages,
+        ],
+      }),
     });
 
     if (!response.ok) {
