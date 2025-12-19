@@ -1,0 +1,13 @@
+project_id = "kqreovtcynfowfrfzpom"
+
+[functions.psychologist-chat]
+verify_jwt = false
+
+[functions.check-chat-limit]
+verify_jwt = false
+
+[functions.send-sms-otp]
+verify_jwt = false
+
+[functions.verify-sms-otp]
+verify_jwt = false
