@@ -64,10 +64,18 @@ const Chat = () => {
   const isInitializedRef = useRef(false);
   const navigate = useNavigate();
 
+  const welcomeMessages = [
+    "Я здесь. Если хочешь — можешь просто написать, что сейчас внутри.",
+    "Иногда сложно понять, что чувствуешь. Можем попробовать разобраться вместе.",
+    "Можно не знать, с чего начать. Пиши как получается — я рядом.",
+    "Привет. Не нужно подбирать слова — просто напиши, что на душе.",
+    "Здесь можно быть честным. Что сейчас происходит?"
+  ];
+
   const welcomeMessage: Message = {
     id: "welcome",
     role: "assistant",
-    content: "Привет. Я рад, что вы здесь. Это безопасное место, где вы можете поделиться тем, что у вас на душе. Как вы себя чувствуете сегодня?",
+    content: welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)],
     timestamp: new Date(),
   };
 
