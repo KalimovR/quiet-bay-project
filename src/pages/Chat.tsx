@@ -24,8 +24,8 @@ const ChatComponent = () => {
     const currentTime = Date.now();
 
     // Проверка, прошло ли 1.3 секунды с последнего отправленного сообщения
-    if (currentTime - lastMessageTime < 1300) {
-      const delay = 1300 - (currentTime - lastMessageTime); 
+    if (currentTime - lastMessageTime < 130000) {
+      const delay = 130000 - (currentTime - lastMessageTime); 
       setIsSending(true);
 
       // Устанавливаем задержку перед отправкой сообщения
