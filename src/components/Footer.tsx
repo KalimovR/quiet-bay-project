@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
-import { Send } from "lucide-react";
+import { Send, Youtube, Globe } from "lucide-react";
+
 
 
 const Footer = () => {
@@ -31,21 +32,52 @@ const Footer = () => {
                     Наши социальные сети
                   </h4>
 
-                  <a
-                    href="https://t.me/QuietBayUR"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label="Telegram Quiet Bay"
-                    className="inline-flex items-center justify-center
-                              text-muted-foreground transition-all
-                              hover:text-blue-500 hover:scale-110"
-                  >
-                    <Send className="h-6 w-6" />
-                    <span className="text-xs text-muted-foreground mt-2">
-                      Telegram
-                   </span>
+                  <div className="flex items-center gap-4">
+  {/* Telegram */}
+  <a
+    href="https://t.me/QuietBayUR"
+    target="_blank"
+    rel="noopener noreferrer"
+    aria-label="Telegram"
+    className="text-muted-foreground transition-all hover:text-blue-500 hover:scale-110"
+  >
+    <Send className="h-6 w-6" />
+  </a>
 
-                  </a>
+  {/* VK */}
+  <a
+    href="https://vk.com/your_vk"
+    target="_blank"
+    rel="noopener noreferrer"
+    aria-label="VK"
+    className="text-muted-foreground transition-all hover:text-blue-600 hover:scale-110"
+  >
+    <Globe className="h-6 w-6" />
+  </a>
+
+  {/* YouTube */}
+  <a
+    href="https://youtube.com/@your_channel"
+    target="_blank"
+    rel="noopener noreferrer"
+    aria-label="YouTube"
+    className="text-muted-foreground transition-all hover:text-red-500 hover:scale-110"
+  >
+    <Youtube className="h-6 w-6" />
+  </a>
+
+  {/* RuTube */}
+  <a
+    href="https://rutube.ru/channel/your_channel"
+    target="_blank"
+    rel="noopener noreferrer"
+    aria-label="RuTube"
+    className="text-muted-foreground transition-all hover:text-orange-500 hover:scale-110"
+  >
+    <span className="text-sm font-bold">R</span>
+  </a>
+</div>
+
                 </div>
 
 
