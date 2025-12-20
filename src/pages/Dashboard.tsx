@@ -814,6 +814,28 @@ const Dashboard = () => {
             )}
 
 
+            {/* Leave Review Section (for regular users) */}
+            {user && !isAdmin && (
+              <div className="bg-card rounded-2xl border border-border/50 p-6 shadow-card mb-8">
+                <div className="flex items-center gap-3 mb-6">
+                  <Star className="w-6 h-6 text-primary" />
+                  <h2 className="font-display text-xl font-semibold text-foreground">Оставить отзыв</h2>
+                </div>
+                <ReviewForm userId={user.id} />
+              </div>
+            )}
+
+            {/* Admin Reviews Section */}
+            {isAdmin && (
+              <div className="bg-card rounded-2xl border border-border/50 p-6 shadow-card mb-8">
+                <div className="flex items-center gap-3 mb-6">
+                  <MessageSquare className="w-6 h-6 text-primary" />
+                  <h2 className="font-display text-xl font-semibold text-foreground">Отзывы пользователей</h2>
+                </div>
+                <AdminReviews />
+              </div>
+            )}
+
             {/* My Lessons Section */}
             <Collapsible open={lessonsOpen} onOpenChange={setLessonsOpen}>
               <div className="bg-card rounded-2xl border border-border/50 shadow-card overflow-hidden">
