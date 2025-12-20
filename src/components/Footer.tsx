@@ -33,6 +33,7 @@ const Footer = () => {
                   </h4>
 
                   <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-4">
   {/* Telegram */}
   <a
     href="https://t.me/QuietBayUR"
@@ -44,38 +45,34 @@ const Footer = () => {
     <Send className="h-6 w-6" />
   </a>
 
-  {/* VK */}
-  <a
-    href="https://vk.com/your_vk"
-    target="_blank"
-    rel="noopener noreferrer"
-    aria-label="VK"
-    className="text-muted-foreground transition-all hover:text-blue-600 hover:scale-110"
+  {/* VK — временно без ссылки */}
+  <button
+    type="button"
+    aria-label="VK (скоро)"
+    className="text-muted-foreground transition-all hover:text-blue-600 hover:scale-110 cursor-not-allowed"
   >
     <Globe className="h-6 w-6" />
-  </a>
+  </button>
 
-  {/* YouTube */}
-  <a
-    href="https://youtube.com/@your_channel"
-    target="_blank"
-    rel="noopener noreferrer"
-    aria-label="YouTube"
-    className="text-muted-foreground transition-all hover:text-red-500 hover:scale-110"
+  {/* YouTube — временно без ссылки */}
+  <button
+    type="button"
+    aria-label="YouTube (скоро)"
+    className="text-muted-foreground transition-all hover:text-red-500 hover:scale-110 cursor-not-allowed"
   >
     <Youtube className="h-6 w-6" />
-  </a>
+  </button>
 
-  {/* RuTube */}
-  <a
-    href="https://rutube.ru/channel/your_channel"
-    target="_blank"
-    rel="noopener noreferrer"
-    aria-label="RuTube"
-    className="text-muted-foreground transition-all hover:text-orange-500 hover:scale-110"
+  {/* RuTube — временно */}
+  <button
+    type="button"
+    aria-label="RuTube (скоро)"
+    className="text-muted-foreground transition-all hover:text-orange-500 hover:scale-110 cursor-not-allowed"
   >
     <span className="text-sm font-bold">R</span>
-  </a>
+  </button>
+</div>
+
 </div>
 
                 </div>
