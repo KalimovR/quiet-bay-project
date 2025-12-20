@@ -1,10 +1,14 @@
 import { Link } from "react-router-dom";
+import { Send } from "lucide-react";
+
 
 const Footer = () => {
   return (
     <footer className="bg-bay-fog/30 border-t border-border/50">
       <div className="container mx-auto px-4 py-12">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+
+          
           {/* Brand */}
           <div className="md:col-span-2">
             <Link to="/" className="flex items-center gap-2 mb-4">
@@ -20,7 +24,7 @@ const Footer = () => {
               Информационная поддержка и образовательные материалы по медитации.
             </p>
           </div>
-
+        
           {/* Links */}
           <div>
             <h4 className="font-display font-semibold text-foreground mb-4">
@@ -94,6 +98,24 @@ const Footer = () => {
             </ul>
           </div>
         </div>
+        {/* Bottom footer bar */}
+<div className="mt-10 pt-6 border-t border-border/50 flex items-center justify-between">
+  <span className="text-sm text-muted-foreground">
+    © Quiet Bay, {new Date().getFullYear()}
+  </span>
+
+  <a
+    href="https://t.me/QuietBayUR"
+    target="_blank"
+    rel="noopener noreferrer"
+    aria-label="Telegram Quiet Bay"
+    className="inline-flex items-center justify-center rounded-full
+               text-muted-foreground transition-all
+               hover:text-blue-500 hover:scale-110"
+  >
+    <Send className="h-5 w-5" />
+  </a>
+</div>
 
         {/* Disclaimer */}
         <div className="mt-12 pt-8 border-t border-border/50">
