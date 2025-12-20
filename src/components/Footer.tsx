@@ -112,24 +112,7 @@ const Footer = () => {
           </p>
         </div>
 
-        <div className="mt-10 pt-6 border-t border-border/50 flex items-center justify-between">
-  <span className="text-sm text-muted-foreground">
-    © Quiet Bay, {new Date().getFullYear()}
-  </span>
-
-  <a
-    href="https://t.me/QuietBayUR"
-    target="_blank"
-    rel="noopener noreferrer"
-    aria-label="Telegram Quiet Bay"
-    className="inline-flex items-center justify-center rounded-full
-               text-muted-foreground transition-all
-               hover:text-blue-500 hover:scale-110"
-  >
-    <Send className="h-5 w-5" />
-  </a>
-</div>
-
+        
       </div>
     </footer>
   );
