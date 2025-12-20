@@ -43,44 +43,13 @@ interface Conversation {
 
 const FREE_DAILY_LIMIT_SECONDS = 35 * 60; // 35 minutes
 
+
+
 const Chat = () => {
   useEffect(() => {
     document.title = "Quiet Bay — Чат с психологом";
   }, []);
 
-  const ChatComponent = () => {
-    const [message, setMessage] = useState(""); // Для хранения текста сообщения
-    const [isSending, setIsSending] = useState(false); // Для отслеживания состояния отправки
-    const [lastMessageTime, setLastMessageTime] = useState(0); // Время последнего сообщения
-  
-    // Функция отправки сообщений с задержкой
-    const sendMessage = async () => {
-      const currentTime = Date.now();
-  
-      // Проверка: прошло ли 1.3 секунды с последнего сообщения
-      if (currentTime - lastMessageTime < 1300) {
-        const delay = 1300 - (currentTime - lastMessageTime);
-        setIsSending(true);
-  
-        // Устанавливаем задержку перед отправкой сообщения
-        setTimeout(() => {
-          setIsSending(false); 
-          setLastMessageTime(Date.now()); // Обновляем время последней отправки
-          console.log("Message sent: ", message); // Тут должна быть отправка сообщения в чат
-        }, delay);
-      } else {
-        setLastMessageTime(currentTime); // Обновляем время отправки сразу
-        console.log("Message sent instantly: ", message); // Отправка без задержки
-      }
-    };
-  
-    // Обработчик нажатия клавиши Enter для отправки сообщения
-    const handleKeyPress = (event: React.KeyboardEvent) => {
-      if (event.key === "Enter" && message.trim() !== "") {
-        sendMessage(); // Отправляем сообщение при нажатии на Enter
-      }
-    };
-  }
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -108,6 +77,55 @@ const Chat = () => {
     "Здесь можно быть честным. Что сейчас происходит?"
   ];
 
+  
+  const Chat = () => {
+    const [message, setMessage] = useState("");  // Для хранения текста сообщения
+    const [isSending, setIsSending] = useState(false);  // Для отслеживания состояния отправки
+    const [lastMessageTime, setLastMessageTime] = useState(0); // Время последнего сообщения
+  
+    // Функция отправки сообщения с задержкой
+    const sendMessage = async () => {
+      const currentTime = Date.now();
+  
+      // Проверка, прошло ли 1.3 секунды с последнего сообщения
+      if (currentTime - lastMessageTime < 1300) {
+        const delay = 1300 - (currentTime - lastMessageTime);  // Задержка до следующего отправленного сообщения
+        setIsSending(true);
+        setTimeout(() => {
+          setIsSending(false);
+          setLastMessageTime(Date.now());
+          console.log("Message sent:", message);  // Отправка сообщения (заменить на вашу логику)
+        }, delay);
+      } else {
+        setLastMessageTime(currentTime);  // Если задержка прошла, отправка без задержки
+        console.log("Message sent instantly:", message);
+      }
+    };
+  
+    // Обработчик нажатия клавиши Enter
+    const handleKeyPress = (event: React.KeyboardEvent) => {
+      if (event.key === "Enter" && message.trim() !== "") {
+        sendMessage();  // Отправка сообщения при нажатии на Enter
+      }
+    };
+  
+    return (
+      <div>
+        <input
+          type="text"
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}  // Обновление текста сообщения
+          onKeyDown={handleKeyPress}  // Обработчик нажатия клавиши Enter
+          placeholder="Type your message"
+        />
+        <button onClick={sendMessage} disabled={isSending}>  // Кнопка отправки с задержкой
+          {isSending ? "Sending..." : "Send"}
+        </button>
+      </div>
+    );
+  };
+  
+  
   const welcomeMessage: Message = {
     id: "welcome",
     role: "assistant",
