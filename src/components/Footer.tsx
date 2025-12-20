@@ -54,6 +54,23 @@ const Footer = () => {
                 </Link>
               </li>
               <li>
+
+              <Link to="/how-it-works" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  Как работает
+                </Link>
+              </li>
+              <li>
+                <Link to="/who-is-it-for" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  Кому подходит
+                </Link>
+              </li>
+              <li>
+                <Link to="/what-it-is-not" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  Чем это НЕ является
+                </Link>
+              </li>
+              <li>
+                
                 <Link to="/pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                   Тарифы
                 </Link>
@@ -61,11 +78,7 @@ const Footer = () => {
               <li>
                 <Link to="/training" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                   Курсы
-                </Link>
-              </li>
-              <li>
-                <Link to="/delivery" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                  Получение услуги
+                  
                 </Link>
               </li>
               <li>

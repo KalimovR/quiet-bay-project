@@ -845,7 +845,7 @@ const Chat = () => {
               variant="calm"
               size="icon"
               className="h-12 w-12 rounded-xl flex-shrink-0"
-              disabled={!input.trim() || isTyping || isLimitReached}
+              disabled={!input.trim() || isTyping || isLimitReached || isSendingBlocked}
             >
               <Send className="w-5 h-5" />
             </Button>
