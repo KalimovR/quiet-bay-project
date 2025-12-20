@@ -16,29 +16,27 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const ChatComponent = () => {
-  const [message, setMessage] = useState("");
-  const [isSending, setIsSending] = useState(false);
-  const [lastMessageTime, setLastMessageTime] = useState(0); 
+  const [message, setMessage] = useState(""); // Для хранения текста сообщения
+  const [isSending, setIsSending] = useState(false); // Для отслеживания состояния отправки
+  const [lastMessageTime, setLastMessageTime] = useState(0); // Время последнего сообщения отправленного
 
   const sendMessage = async () => {
     const currentTime = Date.now();
 
-    // Проверка, прошло ли 1.3 секунды с последнего отправленного сообщения
-    if (currentTime - lastMessageTime < 130000) {
-      const delay = 130000 - (currentTime - lastMessageTime); 
+    // Проверка: прошло ли 1.3 секунды с последнего отправленного сообщения
+    if (currentTime - lastMessageTime < 1300) {
+      const delay = 1300 - (currentTime - lastMessageTime);
       setIsSending(true);
 
       // Устанавливаем задержку перед отправкой сообщения
       setTimeout(() => {
-        setIsSending(false);
-        setLastMessageTime(Date.now());
-        // Здесь добавьте код отправки сообщения
-        console.log("Message sent:", message);
+        setIsSending(false); 
+        setLastMessageTime(Date.now()); // Обновляем время отправки сообщения
+        console.log("Message sent: ", message); // Отправляем сообщение
       }, delay);
     } else {
-      setLastMessageTime(currentTime);
-      // Если время прошло, отправляем сообщение сразу
-      console.log("Message sent:", message);
+      setLastMessageTime(currentTime); // Обновляем время отправки сообщения сразу
+      console.log("Message sent instantly: ", message); // Отправляем сообщение
     }
   };
 
