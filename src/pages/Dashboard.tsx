@@ -644,194 +644,151 @@ const Dashboard = () => {
               </div>
             </Collapsible>
 
-            {/* Security Section */}
-            <Collapsible open={securityOpen} onOpenChange={setSecurityOpen}>
-              <div className="bg-card rounded-2xl border border-border/50 shadow-card mb-8 overflow-hidden">
-                <CollapsibleTrigger className="w-full p-6 flex items-center justify-between hover:bg-muted/30 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <Shield className="w-6 h-6 text-primary" />
-                    <h2 className="font-display text-xl font-semibold text-foreground">Безопасность</h2>
-                  </div>
-                  {securityOpen ? <ChevronUp className="w-5 h-5 text-muted-foreground" /> : <ChevronDown className="w-5 h-5 text-muted-foreground" />}
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <div className="px-6 pb-6">
-                    <Tabs value={securityTab} onValueChange={setSecurityTab}>
-                      <TabsList className="grid w-full grid-cols-3 mb-6">
-                      <TabsList className="grid w-full grid-cols-4 mb-6">
-                      <TabsTrigger value="password">Пароль</TabsTrigger>
-                      <TabsTrigger value="email">Email</TabsTrigger>
-                      <TabsTrigger value="phone">Телефон</TabsTrigger>
-                      <TabsTrigger value="reviews">Отзывы</TabsTrigger>
-                    </TabsList>
-                      <TabsContent value="reviews" className="space-y-6">
-                    {!user ? null : isAdmin ? (
-                      <AdminReviews />
-                    ) : (
-                      <ReviewForm userId={user.id} />
-                    )}
-                  </TabsContent>
+           {/* Security Section */}
+<Collapsible open={securityOpen} onOpenChange={setSecurityOpen}>
+  <div className="bg-card rounded-2xl border border-border/50 shadow-card mb-8 overflow-hidden">
 
+    <CollapsibleTrigger className="w-full p-6 flex items-center justify-between hover:bg-muted/30 transition-colors">
+      <div className="flex items-center gap-3">
+        <Shield className="w-6 h-6 text-primary" />
+        <h2 className="font-display text-xl font-semibold text-foreground">
+          Безопасность
+        </h2>
+      </div>
+      {securityOpen ? (
+        <ChevronUp className="w-5 h-5 text-muted-foreground" />
+      ) : (
+        <ChevronDown className="w-5 h-5 text-muted-foreground" />
+      )}
+    </CollapsibleTrigger>
 
+    <CollapsibleContent>
+      <div className="px-6 pb-6">
 
+        <Tabs value={securityTab} onValueChange={setSecurityTab}>
 
-                        <TabsTrigger value="password" className="flex items-center gap-2">
-                          <Lock className="w-4 h-4" />
-                          <span className="hidden sm:inline">Пароль</span>
-                        </TabsTrigger>
-                        <TabsTrigger value="email" className="flex items-center gap-2">
-                          <Mail className="w-4 h-4" />
-                          <span className="hidden sm:inline">Email</span>
-                        </TabsTrigger>
-                        <TabsTrigger value="phone" className="flex items-center gap-2">
-                          <Phone className="w-4 h-4" />
-                          <span className="hidden sm:inline">Телефон</span>
-                        </TabsTrigger>
-                      </TabsList>
+          {/* TAB HEADERS */}
+          <TabsList className="grid w-full grid-cols-4 mb-6">
+            <TabsTrigger value="password">Пароль</TabsTrigger>
+            <TabsTrigger value="email">Email</TabsTrigger>
+            <TabsTrigger value="phone">Телефон</TabsTrigger>
+            <TabsTrigger value="reviews">Отзывы</TabsTrigger>
+          </TabsList>
 
-                      <TabsContent value="password">
-                        <form onSubmit={handleChangePassword} className="space-y-4 max-w-md">
-                          <div className="space-y-2">
-                            <Label htmlFor="newPassword">Новый пароль</Label>
-                            <div className="relative">
-                              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                              <Input
-                                id="newPassword"
-                                type={showNewPassword ? "text" : "password"}
-                                value={newPassword}
-                                onChange={(e) => setNewPassword(e.target.value)}
-                                placeholder="Мин. 10 символов, заглавная буква и спецсимвол"
-                                className="pl-10 pr-10"
-                                required
-                              />
-                              <button type="button" onClick={() => setShowNewPassword(!showNewPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                                {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                              </button>
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="confirmPassword">Подтвердите пароль</Label>
-                            <div className="relative">
-                              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                              <Input
-                                id="confirmPassword"
-                                type="password"
-                                value={confirmPassword}
-                                onChange={(e) => setConfirmPassword(e.target.value)}
-                                placeholder="Повторите пароль"
-                                className="pl-10"
-                                required
-                              />
-                            </div>
-                          </div>
-                          <Button type="submit" disabled={securityLoading || !newPassword || !confirmPassword}>
-                            {securityLoading ? "Сохранение..." : "Изменить пароль"}
-                          </Button>
-                        </form>
-                      </TabsContent>
-
-                      <TabsContent value="email">
-                        <form onSubmit={handleChangeEmail} className="space-y-4 max-w-md">
-                          <div className="p-4 rounded-xl bg-muted/50 border border-border/50 mb-4">
-                            <p className="text-sm text-muted-foreground">
-                              Текущий email: <span className="font-medium text-foreground">{user?.email || "Не указан"}</span>
-                            </p>
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="newEmail">Новый email</Label>
-                            <div className="relative">
-                              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                              <Input
-                                id="newEmail"
-                                type="email"
-                                value={newEmail}
-                                onChange={(e) => setNewEmail(e.target.value)}
-                                placeholder="newemail@example.com"
-                                className="pl-10"
-                                required
-                              />
-                            </div>
-                            <p className="text-xs text-muted-foreground">На новый email будет отправлено письмо для подтверждения</p>
-                          </div>
-                          <Button type="submit" disabled={securityLoading || !newEmail}>
-                            {securityLoading ? "Отправка..." : "Изменить email"}
-                          </Button>
-                        </form>
-                      </TabsContent>
-
-                      <TabsContent value="phone">
-                        <div className="max-w-md">
-                          <div className="p-4 rounded-xl bg-muted/50 border border-border/50 mb-4">
-                            <p className="text-sm text-muted-foreground">
-                              Текущий телефон: <span className="font-medium text-foreground">{user?.phone || "Не указан"}</span>
-                            </p>
-                          </div>
-                          
-                          {!phoneOtpSent ? (
-                            <form onSubmit={handleSendPhoneOtp} className="space-y-4">
-                              <div className="space-y-2">
-                                <Label htmlFor="newPhone">Новый номер телефона</Label>
-                                <div className="relative">
-                                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                  <Input
-                                    id="newPhone"
-                                    type="tel"
-                                    value={newPhone}
-                                    onChange={(e) => {
-                                      let val = e.target.value;
-                                      if (!val.startsWith("+7")) val = "+7";
-                                      if (val.length <= 12) setNewPhone(val);
-                                    }}
-                                    placeholder="+7XXXXXXXXXX"
-                                    className="pl-10"
-                                    required
-                                  />
-                                </div>
-                                <p className="text-xs text-muted-foreground">Формат: +7XXXXXXXXXX</p>
-                              </div>
-                              <Button type="submit" disabled={securityLoading || newPhone.length !== 12}>
-                                {securityLoading ? "Отправка..." : "Получить код"}
-                              </Button>
-                            </form>
-                          ) : (
-                            <form onSubmit={handleVerifyPhoneOtp} className="space-y-4">
-                              <div className="text-center mb-4">
-                                <p className="text-sm text-muted-foreground">Код отправлен на номер</p>
-                                <p className="font-medium text-foreground">{newPhone}</p>
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="phoneOtp">Код подтверждения</Label>
-                                <Input
-                                  id="phoneOtp"
-                                  type="text"
-                                  value={phoneOtp}
-                                  onChange={(e) => {
-                                    const val = e.target.value.replace(/\D/g, "");
-                                    if (val.length <= 6) setPhoneOtp(val);
-                                  }}
-                                  placeholder="000000"
-                                  maxLength={6}
-                                  className="text-center text-2xl tracking-widest"
-                                  required
-                                />
-                              </div>
-                              <div className="flex gap-2">
-                                <Button type="submit" disabled={securityLoading || phoneOtp.length !== 6}>
-                                  {securityLoading ? "Проверка..." : "Подтвердить"}
-                                </Button>
-                                <Button type="button" variant="outline" onClick={() => { setPhoneOtpSent(false); setPhoneOtp(""); }}>
-                                  Изменить номер
-                                </Button>
-                              </div>
-                            </form>
-                          )}
-                        </div>
-                      </TabsContent>
-                    </Tabs>
-                  </div>
-                </CollapsibleContent>
+          {/* PASSWORD */}
+          <TabsContent value="password">
+            <form onSubmit={handleChangePassword} className="space-y-4 max-w-md">
+              <div className="space-y-2">
+                <Label htmlFor="newPassword">Новый пароль</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id="newPassword"
+                    type={showNewPassword ? "text" : "password"}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="pl-10 pr-10"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
-            </Collapsible>
+
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">Подтвердите пароль</Label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                />
+              </div>
+
+              <Button type="submit" disabled={securityLoading}>
+                Изменить пароль
+              </Button>
+            </form>
+          </TabsContent>
+
+          {/* EMAIL */}
+          <TabsContent value="email">
+            <form onSubmit={handleChangeEmail} className="space-y-4 max-w-md">
+              <div className="space-y-2">
+                <Label htmlFor="newEmail">Новый email</Label>
+                <Input
+                  id="newEmail"
+                  type="email"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <Button type="submit" disabled={securityLoading}>
+                Изменить email
+              </Button>
+            </form>
+          </TabsContent>
+
+          {/* PHONE */}
+          <TabsContent value="phone">
+            {!phoneOtpSent ? (
+              <form onSubmit={handleSendPhoneOtp} className="space-y-4 max-w-md">
+                <div className="space-y-2">
+                  <Label htmlFor="newPhone">Новый телефон</Label>
+                  <Input
+                    id="newPhone"
+                    type="tel"
+                    value={newPhone}
+                    onChange={(e) => setNewPhone(e.target.value)}
+                    required
+                  />
+                </div>
+                <Button type="submit" disabled={securityLoading}>
+                  Получить код
+                </Button>
+              </form>
+            ) : (
+              <form onSubmit={handleVerifyPhoneOtp} className="space-y-4 max-w-md">
+                <div className="space-y-2">
+                  <Label htmlFor="phoneOtp">Код подтверждения</Label>
+                  <Input
+                    id="phoneOtp"
+                    value={phoneOtp}
+                    onChange={(e) => setPhoneOtp(e.target.value)}
+                    required
+                  />
+                </div>
+                <Button type="submit" disabled={securityLoading}>
+                  Подтвердить
+                </Button>
+              </form>
+            )}
+          </TabsContent>
+
+          {/* REVIEWS */}
+          <TabsContent value="reviews" className="space-y-6">
+            {!user ? null : isAdmin ? (
+              <AdminReviews />
+            ) : (
+              <ReviewForm userId={user.id} />
+            )}
+          </TabsContent>
+
+        </Tabs>
+
+      </div>
+    </CollapsibleContent>
+
+  </div>
+</Collapsible>
+
 
 
             {/* Leave Review Section (for regular users) */}
