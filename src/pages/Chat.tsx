@@ -15,18 +15,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-
-
-const getMaxConversations = (tier: string): number | null => {
-  switch (tier) {
-    case 'annual':
-      return null; // unlimited
-    case 'premium':
-      return 7;
-    default:
-      return 3;
-  }
-};
+const MAX_CONVERSATIONS = 3;
 
 interface Message {
   id: string;
@@ -42,15 +31,9 @@ interface Conversation {
 }
 
 const FREE_DAILY_LIMIT_SECONDS = 35 * 60; // 35 minutes
-
-
+const MESSAGE_DELAY_MS = 1420; // 1.42 seconds delay between messages
 
 const Chat = () => {
-  useEffect(() => {
-    document.title = "Quiet Bay — Чат с психологом";
-  }, []);
-
-
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -63,10 +46,12 @@ const Chat = () => {
   const [dailySecondsUsed, setDailySecondsUsed] = useState(0);
   const [isLimitReached, setIsLimitReached] = useState(false);
   const [showNewChatWarning, setShowNewChatWarning] = useState(false);
+  const [isSendingBlocked, setIsSendingBlocked] = useState(false);
   const sessionStartRef = useRef<number | null>(null);
   const usageIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isInitializedRef = useRef(false);
+  const lastMessageTimeRef = useRef<number>(0);
   const navigate = useNavigate();
 
   const welcomeMessages = [
@@ -77,55 +62,6 @@ const Chat = () => {
     "Здесь можно быть честным. Что сейчас происходит?"
   ];
 
-  
-  const Chat = () => {
-    const [message, setMessage] = useState("");  // Для хранения текста сообщения
-    const [isSending, setIsSending] = useState(false);  // Для отслеживания состояния отправки
-    const [lastMessageTime, setLastMessageTime] = useState(0); // Время последнего сообщения
-  
-    // Функция отправки сообщения с задержкой
-    const sendMessage = async () => {
-      const currentTime = Date.now();
-  
-      // Проверка, прошло ли 1.3 секунды с последнего сообщения
-      if (currentTime - lastMessageTime < 1300) {
-        const delay = 1300 - (currentTime - lastMessageTime);  // Задержка до следующего отправленного сообщения
-        setIsSending(true);
-        setTimeout(() => {
-          setIsSending(false);
-          setLastMessageTime(Date.now());
-          console.log("Message sent:", message);  // Отправка сообщения (заменить на вашу логику)
-        }, delay);
-      } else {
-        setLastMessageTime(currentTime);  // Если задержка прошла, отправка без задержки
-        console.log("Message sent instantly:", message);
-      }
-    };
-  
-    // Обработчик нажатия клавиши Enter
-    const handleKeyPress = (event: React.KeyboardEvent) => {
-      if (event.key === "Enter" && message.trim() !== "") {
-        sendMessage();  // Отправка сообщения при нажатии на Enter
-      }
-    };
-  
-    return (
-      <div>
-        <input
-          type="text"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}  // Обновление текста сообщения
-          onKeyDown={handleKeyPress}  // Обработчик нажатия клавиши Enter
-          placeholder="Type your message"
-        />
-        <button onClick={sendMessage} disabled={isSending}>  // Кнопка отправки с задержкой
-          {isSending ? "Sending..." : "Send"}
-        </button>
-      </div>
-    );
-  };
-  
-  
   const welcomeMessage: Message = {
     id: "welcome",
     role: "assistant",
@@ -510,9 +446,8 @@ const Chat = () => {
       return;
     }
 
-    // If we're at max, show warning (unless annual with unlimited)
-    const maxConversations = getMaxConversations(userTier);
-    if (maxConversations !== null && conversations.length >= maxConversations) {
+    // If we're at max, show warning
+    if (conversations.length >= MAX_CONVERSATIONS) {
       setShowNewChatWarning(true);
     } else {
       createNewConversation();
@@ -522,9 +457,8 @@ const Chat = () => {
   const createNewConversation = async () => {
     if (!user) return;
 
-    const maxConversations = getMaxConversations(userTier);
-    // If at max, delete the oldest conversation first (only for non-annual users)
-    if (maxConversations !== null && conversations.length >= maxConversations) {
+    // If at max, delete the oldest conversation first
+    if (conversations.length >= MAX_CONVERSATIONS) {
       const oldestConversation = conversations[conversations.length - 1];
       const { error: deleteError } = await supabase
         .from('conversations')
@@ -596,6 +530,13 @@ const Chat = () => {
     e.preventDefault();
     if (!input.trim()) return;
     
+    // Check if sending is blocked due to rate limit
+    if (isSendingBlocked) {
+      const remainingTime = Math.ceil((MESSAGE_DELAY_MS - (Date.now() - lastMessageTimeRef.current)) / 1000);
+      toast.error(`Подождите ${remainingTime > 0 ? remainingTime : 1} сек. перед отправкой`);
+      return;
+    }
+    
     // Check limit for both logged-in free users and anonymous users
     const isFreeUser = !user || userTier === 'free';
     
@@ -611,6 +552,13 @@ const Chat = () => {
         return;
       }
     }
+
+    // Set rate limit - block sending for 1.42 seconds
+    setIsSendingBlocked(true);
+    lastMessageTimeRef.current = Date.now();
+    setTimeout(() => {
+      setIsSendingBlocked(false);
+    }, MESSAGE_DELAY_MS);
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -766,9 +714,7 @@ const Chat = () => {
           <div className="p-4 space-y-2">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-medium text-muted-foreground">История разговоров</h3>
-              <span className="text-xs text-muted-foreground">
-                {conversations.length}{getMaxConversations(userTier) !== null ? `/${getMaxConversations(userTier)}` : ' (∞)'}
-              </span>
+              <span className="text-xs text-muted-foreground">{conversations.length}/{MAX_CONVERSATIONS}</span>
             </div>
             {conversations.length === 0 ? (
               <p className="text-sm text-muted-foreground">Нет сохранённых разговоров</p>
@@ -873,7 +819,7 @@ const Chat = () => {
           </div>
         </div>
       </main>
-            
+
       {/* Input Area */}
       <div className={`fixed bottom-0 left-0 right-0 bg-background/80 backdrop-blur-md border-t border-border/50 ${showSidebar && user ? 'ml-72' : ''}`}>
         <div className="container mx-auto px-4 py-4 max-w-3xl">
@@ -916,7 +862,7 @@ const Chat = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Создать новый разговор?</AlertDialogTitle>
             <AlertDialogDescription>
-              В истории чата хранится максимум {getMaxConversations(userTier)} прошлых чата. 
+              В истории чата хранится максимум {MAX_CONVERSATIONS} прошлых чата. 
               После создания нового разговора самый старый чат будет удалён навсегда без возможности восстановления.
             </AlertDialogDescription>
           </AlertDialogHeader>

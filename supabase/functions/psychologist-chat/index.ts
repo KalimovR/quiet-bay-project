@@ -1,66 +1,38 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-const RATE_LIMIT_MS = 1300;
-
-// Хранилище в памяти (на один Edge-инстанс)
-const lastMessageMap = new Map<string, number>();
-
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "content-type",
-      },
-    });
-  }
-
-  if (req.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
-  }
-
-  const ip =
-    req.headers.get("x-forwarded-for") ||
-    req.headers.get("cf-connecting-ip") ||
-    "unknown";
-
-  const now = Date.now();
-  const lastTime = lastMessageMap.get(ip) ?? 0;
-
-  if (now - lastTime < RATE_LIMIT_MS) {
-    return new Response(
-      JSON.stringify({
-        error: "Too many messages",
-        retryAfterMs: RATE_LIMIT_MS - (now - lastTime),
-      }),
-      {
-        status: 429,
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Content-Type": "application/json",
-        },
-      }
-    );
-  }
-
-  lastMessageMap.set(ip, now);
-
-  return new Response(
-    JSON.stringify({ ok: true }),
-    {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Content-Type": "application/json",
-      },
-    }
-  );
-});
-
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+// ===== SERVER-SIDE RATE LIMIT (15 requests / minute per IP) =====
+const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 15;
+
+const checkRateLimit = (ip: string): { allowed: boolean; retryAfter?: number } => {
+  const now = Date.now();
+  const record = rateLimitStore.get(ip);
+
+  if (!record || now > record.resetTime) {
+    rateLimitStore.set(ip, {
+      count: 1,
+      resetTime: now + RATE_LIMIT_WINDOW_MS,
+    });
+    return { allowed: true };
+  }
+
+  if (record.count >= MAX_REQUESTS_PER_WINDOW) {
+    const retryAfter = Math.ceil((record.resetTime - now) / 1000);
+    return { allowed: false, retryAfter };
+  }
+
+  record.count++;
+  return { allowed: true };
+};
+
+
 
 // Full meditation techniques for premium/annual users (100%)
 const MEDITATION_TECHNIQUES_FULL = `
@@ -127,18 +99,6 @@ const SYSTEM_PROMPT = `
   «Мне кажется, тогда было очень одиноко»
 — Не используй это как анализ, только как знак внимания
 — Не всегда возвращайся — иногда просто помни молча
-
-ЭМОЦИОНАЛЬНОЕ ЭХО:
-— Иногда возвращай пользователю ключевые слова или образы из его сообщения,
-  слегка переформулируя их
-— Это не должно быть дословным повтором
-— Не объясняй и не интерпретируй, просто отрази ощущение
-— Формы отражения должны варьироваться
-
-Пример (не шаблон, а иллюстрация):
-Пользователь: «внутри пусто»
-Ответ: «пусто… как будто нет отклика»
-
 
 ИНДИВИДУАЛЬНОСТЬ:
 
@@ -315,6 +275,8 @@ const SYSTEM_PROMPT = `
 
 Отвечай только на русском языке.
 `;
+
+
 
 // ===== INTERNAL STATE → RESPONSE STYLE =====
 
@@ -549,8 +511,33 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // ===== RATE LIMIT CHECK =====
+  const clientIP =
+    req.headers.get("cf-connecting-ip") ??
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    req.headers.get("x-real-ip") ??
+    "unknown";
+
+  const rateLimitResult = checkRateLimit(clientIP);
+  if (!rateLimitResult.allowed) {
+    return new Response(
+      JSON.stringify({
+        error: `Слишком много запросов. Подождите ${rateLimitResult.retryAfter} секунд.`,
+      }),
+      {
+        status: 429,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+          "Retry-After": String(rateLimitResult.retryAfter),
+        },
+      }
+    );
+  }
+
   try {
     const { messages, userTier } = await req.json();
+
 
     const lastUserMessage =
   messages
