@@ -98,7 +98,20 @@ const Footer = () => {
             </ul>
           </div>
         </div>
-        
+  
+
+        {/* Disclaimer */}
+        <div className="mt-12 pt-8 border-t border-border/50">
+          <p className="text-xs text-muted-foreground text-center max-w-2xl mx-auto leading-relaxed">
+            ⚠️ Quiet Bay предоставляет информационные услуги и образовательные материалы. 
+            Платформа не является медицинским сервисом и не заменяет профессиональную помощь. 
+            При наличии проблем со здоровьем обратитесь к специалисту. Возрастное ограничение: 18+
+          </p>
+          <p className="text-xs text-muted-foreground text-center mt-4">
+            © {new Date().getFullYear()} Quiet Bay. Все права защищены.
+          </p>
+        </div>
+
         <div className="mt-10 pt-6 border-t border-border/50 flex items-center justify-between">
   <span className="text-sm text-muted-foreground">
     © Quiet Bay, {new Date().getFullYear()}
@@ -117,18 +130,6 @@ const Footer = () => {
   </a>
 </div>
 
-
-        {/* Disclaimer */}
-        <div className="mt-12 pt-8 border-t border-border/50">
-          <p className="text-xs text-muted-foreground text-center max-w-2xl mx-auto leading-relaxed">
-            ⚠️ Quiet Bay предоставляет информационные услуги и образовательные материалы. 
-            Платформа не является медицинским сервисом и не заменяет профессиональную помощь. 
-            При наличии проблем со здоровьем обратитесь к специалисту. Возрастное ограничение: 18+
-          </p>
-          <p className="text-xs text-muted-foreground text-center mt-4">
-            © {new Date().getFullYear()} Quiet Bay. Все права защищены.
-          </p>
-        </div>
       </div>
     </footer>
   );
