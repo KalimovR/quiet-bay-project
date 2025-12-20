@@ -54,6 +54,9 @@ const Chat = () => {
   const lastMessageTimeRef = useRef<number>(0);
   const navigate = useNavigate();
 
+  // Рамка сеанса - показывается только при первом входе в чат (новый разговор)
+  const sessionFrameMessage = "Здесь можно говорить так, как получается.\n\nЯ не буду торопить и не буду давить.\n\nМы можем идти медленно или конкретно — как тебе сейчас ближе.";
+
   const welcomeMessages = [
     "Я здесь. Если хочешь — можешь просто написать, что сейчас внутри.",
     "Иногда сложно понять, что чувствуешь. Можем попробовать разобраться вместе.",
@@ -61,6 +64,27 @@ const Chat = () => {
     "Привет. Не нужно подбирать слова — просто напиши, что на душе.",
     "Здесь можно быть честным. Что сейчас происходит?"
   ];
+
+// Функция для получения приветственного сообщения с рамкой (для новых разговоров)
+const getWelcomeWithFrame = (): Message[] => {
+  const randomWelcome = welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)];
+  return [
+    {
+      id: "session-frame",
+      role: "assistant",
+      content: sessionFrameMessage,
+      timestamp: new Date(),
+    },
+    {
+      id: "welcome",
+      role: "assistant",
+      content: randomWelcome,
+      timestamp: new Date(Date.now() + 100), // Slightly later to ensure order
+    }
+  ];
+};
+
+// Обычное приветственное сообщение (для существующих пустых разговоров)
 
   const welcomeMessage: Message = {
     id: "welcome",
@@ -303,7 +327,7 @@ const Chat = () => {
       } else {
         // Anonymous user - check IP-based limit
         setUser(null);
-        setMessages([welcomeMessage]);
+        setMessages(getWelcomeWithFrame()); // Рамка сеанса для первого входа
         setIsLoading(false);
         isInitializedRef.current = true;
         
@@ -329,7 +353,7 @@ const Chat = () => {
       
       if (error) {
         console.error('Error loading conversations:', error);
-        setMessages([welcomeMessage]);
+        setMessages(getWelcomeWithFrame()); // Рамка сеанса для первого разговора
         setIsLoading(false);
         return;
       }
@@ -488,7 +512,7 @@ const Chat = () => {
 
     setConversations(prev => [data, ...prev]);
     setCurrentConversationId(data.id);
-    setMessages([welcomeMessage]);
+    setMessages(getWelcomeWithFrame()); // Показываем рамку сеанса для нового разговора
     setShowSidebar(false);
   };
 
