@@ -215,23 +215,18 @@ const Dashboard = () => {
     if (!error && data && data.length > 0) setHasCourse(true);
   };
   const checkAdminRole = async (userId: string) => {
-    const { data, error } = await supabase.from("user_roles").select("role").eq("user_id", userId).eq("role", "admin").maybeSingle();
-    if (!error && data) {
-      setIsAdmin(true);
-    }
-
-  const checkAdminRole = async (userId: string) => {
     const { data, error } = await supabase
       .from("user_roles")
       .select("role")
       .eq("user_id", userId)
       .eq("role", "admin")
       .maybeSingle();
-    
+  
     if (!error && data) {
       setIsAdmin(true);
     }
   };
+  
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -663,6 +658,23 @@ const Dashboard = () => {
                   <div className="px-6 pb-6">
                     <Tabs value={securityTab} onValueChange={setSecurityTab}>
                       <TabsList className="grid w-full grid-cols-3 mb-6">
+                      <TabsList className="grid w-full grid-cols-4 mb-6">
+                      <TabsTrigger value="password">Пароль</TabsTrigger>
+                      <TabsTrigger value="email">Email</TabsTrigger>
+                      <TabsTrigger value="phone">Телефон</TabsTrigger>
+                      <TabsTrigger value="reviews">Отзывы</TabsTrigger>
+                    </TabsList>
+                      <TabsContent value="reviews" className="space-y-6">
+                    {!user ? null : isAdmin ? (
+                      <AdminReviews />
+                    ) : (
+                      <ReviewForm userId={user.id} />
+                    )}
+                  </TabsContent>
+
+
+
+
                         <TabsTrigger value="password" className="flex items-center gap-2">
                           <Lock className="w-4 h-4" />
                           <span className="hidden sm:inline">Пароль</span>
@@ -958,6 +970,6 @@ const Dashboard = () => {
       <Footer />
     </div>
   );
-};
+};А
 
 export default Dashboard;
