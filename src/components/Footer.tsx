@@ -98,8 +98,8 @@ const Footer = () => {
             </ul>
           </div>
         </div>
-        {/* Bottom footer bar */}
-<div className="mt-10 pt-6 border-t border-border/50 flex items-center justify-between">
+        
+        <div className="mt-10 pt-6 border-t border-border/50 flex items-center justify-between">
   <span className="text-sm text-muted-foreground">
     © Quiet Bay, {new Date().getFullYear()}
   </span>
@@ -116,6 +116,7 @@ const Footer = () => {
     <Send className="h-5 w-5" />
   </a>
 </div>
+
 
         {/* Disclaimer */}
         <div className="mt-12 pt-8 border-t border-border/50">
