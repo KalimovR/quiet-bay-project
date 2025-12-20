@@ -10,7 +10,7 @@ const Footer = () => {
 
           
           {/* Brand */}
-          <div className="md:col-span-2">
+          <div >
             <Link to="/" className="flex items-center gap-2 mb-4">
               <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
                 <div className="w-4 h-4 rounded-full bg-primary" />
