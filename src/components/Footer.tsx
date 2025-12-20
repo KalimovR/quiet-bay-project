@@ -20,8 +20,13 @@ const RutubeIcon = () => (
   </svg>
 );
 
-      {/* Brand */}
-          <div >
+const Footer = () => {
+  return (
+    <footer className="bg-bay-fog/30 border-t border-border/50">
+      <div >
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+          {/* Brand */}
+          <div className="md:col-span-2">
             <Link to="/" className="flex items-center gap-2 mb-4">
               <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
                 <div className="w-4 h-4 rounded-full bg-primary" />
@@ -35,65 +40,6 @@ const RutubeIcon = () => (
               Информационная поддержка и образовательные материалы по медитации.
             </p>
           </div>
-        
-                {/* Social */}
-                <div>
-                  <h4 className="font-display font-semibold text-foreground mb-4">
-                    Наши социальные сети
-                  </h4>
-
-                  <div className="flex items-center gap-4">
- <div className="flex items-center gap-4">
- </div>
-
-{/* Social Media */}
-<div>
-  <h4 className="font-display font-semibold text-foreground mb-4">
-    Наши социальные сети
-  </h4>
-  <div className="flex gap-3">
-    <a 
-      href="https://t.me/QuietBayUR" 
-      target="_blank" 
-      rel="noopener noreferrer"
-      className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-primary/20 transition-all"
-      aria-label="Telegram"
-    >
-      <TelegramIcon />
-    </a>
-    <a 
-      href="#" 
-      target="_blank" 
-      rel="noopener noreferrer"
-      className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-primary/20 transition-all"
-      aria-label="VK"
-    >
-      <VKIcon />
-    </a>
-    <a 
-      href="#" 
-      target="_blank" 
-      rel="noopener noreferrer"
-      className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-primary/20 transition-all"
-      aria-label="Rutube"
-    >
-      <RutubeIcon />
-    </a>
-    <a 
-      href="#" 
-      target="_blank" 
-      rel="noopener noreferrer"
-      className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-primary/20 transition-all"
-      aria-label="YouTube"
-    >
-      <Youtube className="w-5 h-5" />
-    </a>
-  </div>
-
-</div>
-
-                </div>
-
 
           {/* Links */}
           <div>
@@ -167,8 +113,52 @@ const RutubeIcon = () => (
               </li>
             </ul>
           </div>
+
+          {/* Social Media */}
+          <div>
+            <h4 className="font-display font-semibold text-foreground mb-4">
+              Наши социальные сети
+            </h4>
+            <div className="flex gap-3">
+              <a 
+                href="https://t.me/QuietBayUR" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-primary/20 transition-all"
+                aria-label="Telegram"
+              >
+                <TelegramIcon />
+              </a>
+              <a 
+                href="#" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-primary/20 transition-all"
+                aria-label="VK"
+              >
+                <VKIcon />
+              </a>
+              <a 
+                href="#" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-primary/20 transition-all"
+                aria-label="Rutube"
+              >
+                <RutubeIcon />
+              </a>
+              <a 
+                href="#" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-primary/20 transition-all"
+                aria-label="YouTube"
+              >
+                <Youtube className="w-5 h-5" />
+              </a>
+            </div>
+          </div>
         </div>
-  
 
         {/* Disclaimer */}
         <div className="mt-12 pt-8 border-t border-border/50">
@@ -181,8 +171,6 @@ const RutubeIcon = () => (
             © {new Date().getFullYear()} Quiet Bay. Все права защищены.
           </p>
         </div>
-
-        
       </div>
     </footer>
   );
