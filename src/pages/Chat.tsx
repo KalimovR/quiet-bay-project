@@ -15,6 +15,48 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+const ChatComponent = () => {
+  const [message, setMessage] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [lastMessageTime, setLastMessageTime] = useState(0); 
+
+  const sendMessage = async () => {
+    const currentTime = Date.now();
+
+    // Проверка, прошло ли 1.3 секунды с последнего отправленного сообщения
+    if (currentTime - lastMessageTime < 1300) {
+      const delay = 1300 - (currentTime - lastMessageTime); 
+      setIsSending(true);
+
+      // Устанавливаем задержку перед отправкой сообщения
+      setTimeout(() => {
+        setIsSending(false);
+        setLastMessageTime(Date.now());
+        // Здесь добавьте код отправки сообщения
+        console.log("Message sent:", message);
+      }, delay);
+    } else {
+      setLastMessageTime(currentTime);
+      // Если время прошло, отправляем сообщение сразу
+      console.log("Message sent:", message);
+    }
+  };
+
+  return (
+    <div>
+      <input
+        type="text"
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        placeholder="Type your message"
+      />
+      <button onClick={sendMessage} disabled={isSending}>
+        {isSending ? "Sending..." : "Send"}
+      </button>
+    </div>
+  );
+};
+
 const getMaxConversations = (tier: string): number | null => {
   switch (tier) {
     case 'annual':
@@ -819,7 +861,7 @@ const Chat = () => {
           </div>
         </div>
       </main>
-
+            
       {/* Input Area */}
       <div className={`fixed bottom-0 left-0 right-0 bg-background/80 backdrop-blur-md border-t border-border/50 ${showSidebar && user ? 'ml-72' : ''}`}>
         <div className="container mx-auto px-4 py-4 max-w-3xl">
