@@ -11,11 +11,13 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { User, Play, Clock, LogOut, BookOpen, Camera, Pencil, Check, X, CreditCard, Calendar, Shield, Mail, Lock, Phone, Eye, EyeOff, CheckCircle, RotateCcw, ChevronDown, ChevronUp, Star } from "lucide-react";
+import { User, Play, Clock, LogOut, BookOpen, Camera, Pencil, Check, X, CreditCard, Calendar, Shield, Mail, Lock, Phone, Eye, EyeOff, Star, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { z } from "zod";
+import ReviewForm from "@/components/ReviewForm";
+import AdminReviews from "@/components/AdminReviews";
 import {
   Dialog,
   DialogContent,
@@ -109,6 +111,8 @@ const Dashboard = () => {
   
   // Admin state
   const [isAdmin, setIsAdmin] = useState(false);
+  
+
   
   const navigate = useNavigate();
 
@@ -210,6 +214,11 @@ const Dashboard = () => {
     const { data, error } = await supabase.from("course_purchases").select("*").eq("user_id", userId).eq("course_id", "meditation-course");
     if (!error && data && data.length > 0) setHasCourse(true);
   };
+  const checkAdminRole = async (userId: string) => {
+    const { data, error } = await supabase.from("user_roles").select("role").eq("user_id", userId).eq("role", "admin").maybeSingle();
+    if (!error && data) {
+      setIsAdmin(true);
+    }
 
   const checkAdminRole = async (userId: string) => {
     const { data, error } = await supabase
@@ -811,6 +820,30 @@ const Dashboard = () => {
                 </CollapsibleContent>
               </div>
             </Collapsible>
+
+
+            {/* Leave Review Section (for regular users) */}
+            {user && !isAdmin && (
+              <div className="bg-card rounded-2xl border border-border/50 p-6 shadow-card mb-8">
+                <div className="flex items-center gap-3 mb-6">
+                  <Star className="w-6 h-6 text-primary" />
+                  <h2 className="font-display text-xl font-semibold text-foreground">Оставить отзыв</h2>
+                </div>
+                <ReviewForm userId={user.id} />
+              </div>
+            )}
+
+            {/* Admin Reviews Section */}
+            {isAdmin && (
+              <div className="bg-card rounded-2xl border border-border/50 p-6 shadow-card mb-8">
+                <div className="flex items-center gap-3 mb-6">
+                  <MessageSquare className="w-6 h-6 text-primary" />
+                  <h2 className="font-display text-xl font-semibold text-foreground">Отзывы пользователей</h2>
+                </div>
+                <AdminReviews />
+              </div>
+            )}
+
 
             {/* My Lessons Section */}
             <Collapsible open={lessonsOpen} onOpenChange={setLessonsOpen}>
