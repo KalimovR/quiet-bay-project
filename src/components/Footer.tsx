@@ -25,6 +25,30 @@ const Footer = () => {
             </p>
           </div>
         
+                {/* Social */}
+                <div>
+                  <h4 className="font-display font-semibold text-foreground mb-4">
+                    Наши социальные сети
+                  </h4>
+
+                  <a
+                    href="https://t.me/QuietBayUR"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Telegram Quiet Bay"
+                    className="inline-flex items-center justify-center
+                              text-muted-foreground transition-all
+                              hover:text-blue-500 hover:scale-110"
+                  >
+                    <Send className="h-6 w-6" />
+                    <span className="text-xs text-muted-foreground mt-2">
+                      Telegram
+                   </span>
+
+                  </a>
+                </div>
+
+
           {/* Links */}
           <div>
             <h4 className="font-display font-semibold text-foreground mb-4">
