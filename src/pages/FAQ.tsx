@@ -1,178 +1,182 @@
-import { useState, useEffect } from "react";
-import Navigation from "@/components/Navigation";
-import Footer from "@/components/Footer";
-import { ChevronDown, Phone, ExternalLink } from "lucide-react";
+import Header from "@/components/layout/Header";
+import Footer from "@/components/layout/Footer";
+import SEO from "@/components/SEO";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { AlertTriangle, Phone } from "lucide-react";
+
+const generalFaqs = [
+  {
+    question: "Что такое Quiet Bay?",
+    answer: "Quiet Bay — это ИИ-компаньон для эмоциональной поддержки. Он предоставляет безопасное, анонимное пространство, где вы можете делиться своими мыслями и чувствами, получать эмпатичные ответы и изучать техники успокоения. Он доступен 24/7, когда вам нужен кто-то, с кем можно поговорить."
+  },
+  {
+    question: "Это терапия или медицинское лечение?",
+    answer: "Нет. Quiet Bay НЕ является медицинским сервисом, терапией или лечением. Наш ИИ не врач, не психиатр и не лицензированный терапевт. Он предоставляет только информационную и эмоциональную поддержку. Он не может ставить диагнозы или назначать лечение. При проблемах с психическим здоровьем, пожалуйста, обратитесь к квалифицированному специалисту."
+  },
+  {
+    question: "Как работает ИИ?",
+    answer: "Наш ИИ обучен отвечать с эмпатией и пониманием. Он слушает то, чем вы делитесь, задаёт вдумчивые вопросы, помогающие исследовать ваши чувства, и предлагает мягкие рекомендации и успокаивающие упражнения. Он никогда не осуждает, не морализирует и не использует сложную психологическую терминологию."
+  },
+  {
+    question: "Моя информация приватна?",
+    answer: "Да. Ваши разговоры зашифрованы, и мы не собираем личную идентифицирующую информацию. Вы можете использовать Quiet Bay полностью анонимно. Мы никогда не делимся вашими разговорами с третьими лицами."
+  },
+  {
+    question: "С чем может помочь Quiet Bay?",
+    answer: "Quiet Bay может помочь с повседневным стрессом, тревожностью, сложными эмоциями, одиночеством или когда вам просто нужен кто-то, кто выслушает. Он может провести вас через дыхательные упражнения и помочь упорядочить мысли. Однако он не подходит для серьёзных психических расстройств или кризисных ситуаций."
+  },
+  {
+    question: "Есть возрастные ограничения?",
+    answer: "Да, Quiet Bay предназначен для пользователей от 18 лет и старше. Если вам меньше 18 лет и вам нужна поддержка, пожалуйста, обратитесь к доверенному взрослому, школьному психологу или молодёжной линии помощи в вашем регионе."
+  },
+];
+
+const paymentFaqs = [
+  {
+    question: "Что включено в бесплатный план?",
+    answer: "Бесплатный план включает 5 сообщений в день, базовые разговоры для эмоциональной поддержки, доступ к дыхательным упражнениям и кризисные ресурсы. Это отличный способ попробовать Quiet Bay и понять, подходит ли он вам."
+  },
+  {
+    question: "Могу ли я отменить подписку в любое время?",
+    answer: "Да, абсолютно. Вы можете отменить Премиум или Годовую подписку в любое время. Вы продолжите иметь доступ до конца оплаченного периода, и нет никаких штрафов за отмену."
+  },
+  {
+    question: "Какие способы оплаты вы принимаете?",
+    answer: "Мы принимаем все основные кредитные карты (Visa, MasterCard, American Express) и дебетовые карты через наш защищённый платёжный процессор Stripe."
+  },
+];
 
 const FAQ = () => {
-  useEffect(() => {
-    document.title = "Quiet Bay — Вопросы и ответы";
-  }, []);
-
-  const [openIndex, setOpenIndex] = useState<number | null>(0);
-
-  const faqs = [
-    {
-      question: "Кто такой ИИ-психолог?",
-      answer: "ИИ-психолог — это искусственный интеллект, обученный вести эмпатичный и поддерживающий диалог. Он не является врачом, психиатром или клиническим психологом. ИИ создан для информационной и эмоциональной поддержки в повседневных ситуациях стресса, тревожности или эмоционального напряжения."
-    },
-    {
-      question: "Чем ИИ может мне помочь?",
-      answer: "ИИ-психолог может: выслушать вас без осуждения, помочь структурировать мысли и разобраться в чувствах, предложить простые техники заземления и успокоения, задать уточняющие вопросы для лучшего понимания ситуации, быть рядом когда вам нужна поддержка — в любое время суток."
-    },
-    {
-      question: "Чего ИИ НЕ может делать?",
-      answer: "ИИ-психолог НЕ имеет права: ставить медицинские диагнозы, назначать лекарства или лечение, заменять профессиональную психологическую или психиатрическую помощь, давать категоричные советы о том, как поступить в вашей ситуации. При серьёзных проблемах необходимо обратиться к квалифицированному специалисту."
-    },
-    {
-      question: "Безопасны ли мои данные?",
-      answer: "Мы серьёзно относимся к конфиденциальности. Все разговоры шифруются, и мы не передаём ваши данные третьим лицам. Вы можете использовать сервис анонимно. У вас есть полный контроль над своими данными — вы можете удалить историю разговоров в любой момент."
-    },
-    {
-      question: "Что делать в кризисной ситуации?",
-      answer: "Если вы или кто-то из ваших близких находится в кризисной ситуации, испытывает мысли о самоповреждении или суициде — пожалуйста, немедленно обратитесь за профессиональной помощью. ИИ не предназначен для помощи в кризисных ситуациях. Обратитесь на телефон доверия: 8-800-2000-122 (бесплатно по России, круглосуточно)."
-    },
-    {
-      question: "Для кого подходит этот сервис?",
-      answer: "Quiet Bay подходит людям 18+ лет, которые: испытывают повседневный стресс или тревожность, хотят получить поддержку анонимно и в удобное время, не готовы или не могут обратиться к живому психологу, нуждаются в пространстве для проговаривания мыслей, ищут простые техники самопомощи."
-    },
-    {
-      question: "Как работает подписка?",
-      answer: "У нас есть бесплатный план с ограниченным количеством сообщений для знакомства с сервисом. Платные планы дают безлимитный доступ к общению, расширенные сценарии поддержки и приоритетное время ответа. Вы можете отменить подписку в любой момент, а в течение первых 14 дней действует гарантия возврата средств."
-    },
-    {
-      question: "Могу ли я отменить подписку?",
-      answer: "Да, вы можете отменить подписку в любой момент. Если вы отмените подписку, доступ к премиум-функциям сохранится до конца оплаченного периода. В течение первых 14 дней после оплаты действует полная гарантия возврата средств."
-    },
-  ];
-
   return (
     <div className="min-h-screen bg-background">
-      <Navigation />
+      <SEO 
+        title="Quiet Bay — Вопросы и ответы"
+        description="Частые вопросы о Quiet Bay: как работает ИИ психолог, конфиденциальность, оплата и безопасность."
+        canonical="/faq"
+      />
+      <Header />
       
-      {/* Hero */}
-      <section className="relative pt-32 pb-16 md:pt-40 md:pb-24">
-        <div className="absolute inset-0 bg-calm" />
-        <div className="container mx-auto px-4 relative z-10">
-          <div className="max-w-2xl mx-auto text-center">
-            <h1 className="font-display text-4xl md:text-5xl font-semibold text-foreground mb-6">
-              Часто задаваемые вопросы
+      <main className="pt-24 md:pt-32 pb-24">
+        <div className="container mx-auto px-4">
+          {/* Header */}
+          <div className="text-center max-w-2xl mx-auto mb-16">
+            <span className="text-sm font-medium text-primary uppercase tracking-wider mb-4 block">
+              Вопросы и безопасность
+            </span>
+            <h1 className="font-heading text-4xl md:text-5xl font-semibold text-foreground mb-6">
+              Вопросы и безопасность
             </h1>
-            <p className="text-lg text-muted-foreground leading-relaxed">
-              Ответы на основные вопросы о Quiet Bay и ИИ-психологе
+            <p className="text-muted-foreground text-lg">
+              Всё, что вам нужно знать о Quiet Bay и вашей безопасности.
             </p>
           </div>
-        </div>
-      </section>
 
-      {/* FAQ Accordion */}
-      <section className="py-16 md:py-24">
-        <div className="container mx-auto px-4">
           <div className="max-w-3xl mx-auto">
-            <div className="space-y-4">
-              {faqs.map((faq, index) => (
-                <div
-                  key={index}
-                  className="rounded-xl border border-border/50 bg-card overflow-hidden transition-all duration-300"
-                >
-                  <button
-                    onClick={() => setOpenIndex(openIndex === index ? null : index)}
-                    className="w-full px-6 py-5 text-left flex items-center justify-between gap-4 hover:bg-bay-fog/30 transition-colors"
-                  >
-                    <span className="font-display font-medium text-foreground">
-                      {faq.question}
-                    </span>
-                    <ChevronDown
-                      className={`w-5 h-5 text-muted-foreground flex-shrink-0 transition-transform duration-300 ${
-                        openIndex === index ? "rotate-180" : ""
-                      }`}
-                    />
-                  </button>
-                  <div
-                    className={`px-6 overflow-hidden transition-all duration-300 ${
-                      openIndex === index ? "pb-5 max-h-96" : "max-h-0"
-                    }`}
-                  >
-                    <p className="text-muted-foreground leading-relaxed">
-                      {faq.answer}
-                    </p>
+            {/* Crisis Alert */}
+            <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-6 mb-12">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-destructive/20 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-destructive" />
+                </div>
+                <div>
+                  <h3 className="font-heading text-lg font-semibold text-foreground mb-2">
+                    Если вы в кризисе или думаете о самоповреждении
+                  </h3>
+                  <p className="text-foreground/80 text-sm mb-4">
+                    Пожалуйста, обратитесь за немедленной помощью. Quiet Bay не предназначен для 
+                    работы с кризисными ситуациями. Вы не одиноки, и профессиональная поддержка доступна.
+                  </p>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center gap-2">
+                      <Phone size={14} className="text-destructive" />
+                      <span className="text-foreground/80">
+                        <strong>Экстренная помощь:</strong> 112 или местный номер экстренных служб
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Phone size={14} className="text-destructive" />
+                      <span className="text-foreground/80">
+                        <strong>Телефон доверия:</strong> 8-800-2000-122 (бесплатно по России)
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Phone size={14} className="text-destructive" />
+                      <span className="text-foreground/80">
+                        <strong>Центр экстренной психологической помощи МЧС:</strong> 8-499-216-50-50
+                      </span>
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Crisis Support */}
-      <section className="py-16 md:py-24 bg-bay-warm">
-        <div className="container mx-auto px-4">
-          <div className="max-w-2xl mx-auto text-center">
-            <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-6">
-              <Phone className="w-8 h-8 text-destructive" />
-            </div>
-            <h2 className="font-display text-2xl md:text-3xl font-semibold text-foreground mb-4">
-              Экстренная помощь
-            </h2>
-            <p className="text-muted-foreground leading-relaxed mb-8">
-              Если вы находитесь в кризисной ситуации, испытываете мысли о самоповреждении 
-              или суициде — пожалуйста, немедленно обратитесь за профессиональной помощью.
-            </p>
-            
-            <div className="space-y-4">
-              <a
-                href="tel:88002000122"
-                className="flex items-center justify-center gap-3 p-4 rounded-xl bg-card border border-border/50 hover:border-primary/50 transition-colors group"
-              >
-                <Phone className="w-5 h-5 text-primary" />
-                <div className="text-left">
-                  <p className="font-medium text-foreground">Телефон доверия</p>
-                  <p className="text-sm text-muted-foreground">8-800-2000-122 (бесплатно, 24/7)</p>
-                </div>
-                <ExternalLink className="w-4 h-4 text-muted-foreground ml-auto group-hover:text-primary transition-colors" />
-              </a>
-              
-              <a
-                href="tel:112"
-                className="flex items-center justify-center gap-3 p-4 rounded-xl bg-card border border-border/50 hover:border-primary/50 transition-colors group"
-              >
-                <Phone className="w-5 h-5 text-primary" />
-                <div className="text-left">
-                  <p className="font-medium text-foreground">Экстренные службы</p>
-                  <p className="text-sm text-muted-foreground">112 (единый номер)</p>
-                </div>
-                <ExternalLink className="w-4 h-4 text-muted-foreground ml-auto group-hover:text-primary transition-colors" />
-              </a>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Important Notice */}
-      <section className="py-16 md:py-24">
-        <div className="container mx-auto px-4">
-          <div className="max-w-3xl mx-auto">
-            <div className="rounded-2xl border border-border/50 bg-bay-fog/30 p-8">
-              <h3 className="font-display text-xl font-semibold text-foreground mb-4">
-                Важная информация
-              </h3>
-              <div className="space-y-4 text-sm text-muted-foreground leading-relaxed">
-                <p>
-                  <strong className="text-foreground">Quiet Bay не является медицинским сервисом.</strong> ИИ-психолог 
-                  оказывает информационную и эмоциональную поддержку, но не заменяет профессиональную 
-                  психологическую или медицинскую помощь.
-                </p>
-                <p>
-                  При наличии серьёзных психологических проблем, депрессии, тревожных расстройств или 
-                  других ментальных состояний необходимо обратиться к квалифицированному специалисту.
-                </p>
-                <p>
-                  <strong className="text-foreground">Возрастное ограничение: 18+</strong>
-                </p>
               </div>
             </div>
+
+            {/* General FAQs */}
+            <div className="mb-12">
+              <h2 className="font-heading text-2xl font-semibold text-foreground mb-6">
+                Общие вопросы
+              </h2>
+              <Accordion type="single" collapsible className="space-y-4">
+                {generalFaqs.map((faq, index) => (
+                  <AccordionItem 
+                    key={index} 
+                    value={`general-${index}`}
+                    className="border border-border rounded-lg px-6 data-[state=open]:bg-secondary/30"
+                  >
+                    <AccordionTrigger className="text-left font-medium text-foreground hover:no-underline py-4">
+                      {faq.question}
+                    </AccordionTrigger>
+                    <AccordionContent className="text-muted-foreground pb-4">
+                      {faq.answer}
+                    </AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
+            </div>
+
+            {/* Payment FAQs */}
+            <div className="mb-12">
+              <h2 className="font-heading text-2xl font-semibold text-foreground mb-6">
+                Оплата и подписки
+              </h2>
+              <Accordion type="single" collapsible className="space-y-4">
+                {paymentFaqs.map((faq, index) => (
+                  <AccordionItem 
+                    key={index} 
+                    value={`payment-${index}`}
+                    className="border border-border rounded-lg px-6 data-[state=open]:bg-secondary/30"
+                  >
+                    <AccordionTrigger className="text-left font-medium text-foreground hover:no-underline py-4">
+                      {faq.question}
+                    </AccordionTrigger>
+                    <AccordionContent className="text-muted-foreground pb-4">
+                      {faq.answer}
+                    </AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
+            </div>
+
+            {/* Important Notice */}
+            <div className="bg-warm-glow/50 border border-amber-200/50 rounded-xl p-6">
+              <h3 className="font-heading text-lg font-semibold text-foreground mb-3">
+                Важное уведомление
+              </h3>
+              <p className="text-foreground/80 text-sm leading-relaxed">
+                Quiet Bay — это инструмент эмоциональной поддержки на базе ИИ, созданный для утешения и 
+                присутствия слушателя. Он <strong>не является</strong> заменой профессиональной помощи 
+                в области психического здоровья. Если вы испытываете сильную тревогу, депрессию или другие 
+                проблемы с психическим здоровьем, пожалуйста, проконсультируйтесь с лицензированным специалистом. 
+                Наш ИИ не может предоставлять диагнозы, медицинские советы или кризисное вмешательство.
+              </p>
+            </div>
           </div>
         </div>
-      </section>
+      </main>
 
       <Footer />
     </div>

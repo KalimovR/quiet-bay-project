@@ -1,13 +1,10 @@
-project_id = "kqreovtcynfowfrfzpom"
+project_id = "csdkyyvkgboxywadyckr"
 
-[functions.psychologist-chat]
+[functions.chat]
 verify_jwt = false
 
-[functions.check-chat-limit]
+[functions.chat-sessions]
 verify_jwt = false
 
-[functions.send-sms-otp]
-verify_jwt = false
-
-[functions.verify-sms-otp]
+[functions.yookassa-payment]
 verify_jwt = false

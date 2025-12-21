@@ -1,324 +1,377 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import Navigation from "@/components/Navigation";
-import Footer from "@/components/Footer";
-import PaymentModal from "@/components/PaymentModal";
-import { Check, Sparkles, CheckCircle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { User } from "@supabase/supabase-js";
+import Header from "@/components/layout/Header";
+import Footer from "@/components/layout/Footer";
+import SEO from "@/components/SEO";
+import { Button } from "@/components/ui/button";
+import { Check, Sparkles, Crown, Loader2, ShieldCheck, CreditCard, Info } from "lucide-react";
+import { Link } from "react-router-dom";
+import { usePayment } from "@/hooks/usePayment";
+import { toast } from "sonner";
 
-type SubscriptionTier = "free" | "premium" | "annual";
+interface Feature {
+  text: string;
+  premium?: boolean; // true = gold checkmark for premium-only features
+}
+
+interface Plan {
+  name: string;
+  price: string;
+  period: string;
+  description: string;
+  features: Feature[];
+  cta: string;
+  variant: "calm" | "bay";
+  popular: boolean;
+  isPremium: boolean;
+}
+
+const plans: Plan[] = [
+  {
+    name: "Бесплатно",
+    price: "0",
+    period: "навсегда",
+    description: "Идеально для знакомства с Quiet Bay",
+    features: [
+      { text: "Ограниченное время общения" },
+      { text: "История до 3 чатов" },
+      { text: "Базовая эмоциональная поддержка" },
+      { text: "Доступ к дыхательным упражнениям" },
+      { text: "Кризисные ресурсы доступны" },
+    ],
+    cta: "Начать бесплатно",
+    variant: "calm" as const,
+    popular: false,
+    isPremium: false,
+  },
+  {
+    name: "Премиум",
+    price: "399",
+    period: "в месяц",
+    description: "Для постоянной поддержки и глубоких разговоров",
+    features: [
+      { text: "Безлимитные сообщения" },
+      { text: "Продвинутые успокаивающие упражнения" },
+      { text: "История до 7 чатов", premium: true },
+      { text: "Приоритетное время ответа", premium: true },
+      { text: "Персонализированные проверки", premium: true },
+      { text: "Отчёты по email (опционально)", premium: true },
+    ],
+    cta: "Получить Премиум",
+    variant: "bay" as const,
+    popular: true,
+    isPremium: true,
+  },
+  {
+    name: "Годовой Премиум",
+    price: "3899",
+    period: "в год",
+    description: "Лучшая цена — экономия более 30%",
+    features: [
+      { text: "Всё из Премиума" },
+      { text: "Безлимитная история чатов", premium: true },
+      { text: "Экономия 900₽ в год", premium: true },
+      { text: "Ранний доступ к новым функциям", premium: true },
+      { text: "Приоритетная поддержка", premium: true },
+    ],
+    cta: "Получить Годовой Премиум",
+    variant: "calm" as const,
+    popular: false,
+    isPremium: true,
+  },
+];
+
+interface Subscription {
+  id: string;
+  plan_name: string;
+  status: string;
+  expires_at: string | null;
+}
 
 const Pricing = () => {
-  useEffect(() => {
-    document.title = "Quiet Bay — Тарифы";
-  }, []);
-  const [userTier, setUserTier] = useState<SubscriptionTier | null>(null);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [paymentModal, setPaymentModal] = useState<{
-    open: boolean;
-    planName: string;
-    price: string;
-    period: string;
-  }>({ open: false, planName: "", price: "", period: "" });
+  const [user, setUser] = useState<User | null>(null);
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+  const [activeSubscription, setActiveSubscription] = useState<Subscription | null>(null);
+  const navigate = useNavigate();
+  const { createPayment, isLoading } = usePayment();
 
   useEffect(() => {
-    const checkSubscription = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
       if (session?.user) {
-        setIsLoggedIn(true);
-        
-        // Fetch user's subscription tier
-        const { data: subscription } = await supabase
-          .from('user_subscriptions')
-          .select('tier, expires_at')
-          .eq('user_id', session.user.id)
-          .maybeSingle();
-        
-        if (subscription) {
-          // Check if subscription is still active
-          if (!subscription.expires_at || new Date(subscription.expires_at) > new Date()) {
-            setUserTier(subscription.tier as SubscriptionTier);
-          } else {
-            setUserTier('free');
-          }
-        } else {
-          setUserTier('free');
-        }
-      }
-    };
-
-    checkSubscription();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user) {
-        setIsLoggedIn(true);
-        checkSubscription();
-      } else {
-        setIsLoggedIn(false);
-        setUserTier(null);
+        fetchSubscription(session.user.id);
       }
     });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          fetchSubscription(session.user.id);
+        } else {
+          setActiveSubscription(null);
+        }
+      }
+    );
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // Map plan names to tier values
-  const getTierFromPlanName = (planName: string): SubscriptionTier => {
-    switch (planName) {
-      case "Премиум": return "premium";
-      case "Годовой": return "annual";
-      default: return "free";
+  const fetchSubscription = async (userId: string) => {
+    const { data } = await supabase
+      .from('subscriptions')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    
+    if (data) {
+      setActiveSubscription(data);
     }
   };
 
-  const plans = [
-    {
-      name: "Бесплатно",
-      tier: "free" as SubscriptionTier,
-      description: "Для первого знакомства",
-      price: "0",
-      period: "навсегда",
-      features: [
-        "Ограниченное время общения",
-        "Базовая поддержка",
-        "Доступ к дыхательным упражнениям",
-      ],
-      limitations: [
-        "Ограниченное время в день",
-        "Стандартное время ответа",
-        "Только 3 сохранённых чата",
-      ],
-      cta: "Начать бесплатно",
-      variant: "mist" as const,
-      popular: false,
-    },
-    {
-      name: "Премиум",
-      tier: "premium" as SubscriptionTier,
-      description: "Полный доступ к поддержке",
-      price: "399",
-      period: "в месяц",
-      features: [
-        "Безлимитные сообщения",
-        "Приоритетное время ответа",
-        "Расширенные сценарии поддержки",
-        "Техники заземления и успокоения",
-        "Увеличенная история чатов (7)",
-        "Персонализированные рекомендации",
-      ],
-      limitations: [],
-      cta: "Выбрать Премиум",
-      variant: "hero" as const,
-      popular: true,
-    },
-    {
-      name: "Годовой",
-      tier: "annual" as SubscriptionTier,
-      description: "Выгодное предложение",
-      price: "3199",
-      period: "в год",
-      savings: "Экономия 1589 ₽",
-      features: [
-        "Всё из Премиум тарифа",
-        "Безлимитная история чатов",
-        "2 месяца бесплатно",
-        "Приоритетная поддержка",
-        "Ранний доступ к новым функциям",
-      ],
-      limitations: [],
-      cta: "Выбрать Годовой",
-      variant: "calm" as const,
-      popular: false,
-    },
-  ];
+  const handlePlanClick = async (plan: Plan) => {
+    if (plan.price === "0") {
+      navigate("/chat");
+      return;
+    }
 
-  const isPlanActive = (planTier: SubscriptionTier): boolean => {
-    if (!isLoggedIn || !userTier) return false;
-    return userTier === planTier;
+    if (!user) {
+      toast.info("Войдите, чтобы оформить подписку");
+      navigate("/auth");
+      return;
+    }
+
+    setLoadingPlan(plan.name);
+    
+    const isYearly = plan.name === "Годовой Премиум";
+    
+    await createPayment({
+      amount: parseInt(plan.price),
+      description: `Подписка ${plan.name} — Quiet Bay`,
+      productType: 'subscription',
+      productId: isYearly ? 'yearly' : 'monthly',
+      userId: user.id,
+      email: user.email || undefined
+    });
+
+    setLoadingPlan(null);
   };
 
   return (
     <div className="min-h-screen bg-background">
-      <Navigation />
+      <SEO 
+        title="Quiet Bay — Тарифы"
+        description="Выберите подходящий тариф. Начните бесплатно или получите безлимитный доступ с Премиум."
+        canonical="/pricing"
+      />
+      <Header />
       
-      {/* Hero */}
-      <section className="relative pt-32 pb-16 md:pt-40 md:pb-24">
-        <div className="absolute inset-0 bg-gradient-to-b from-bay-fog/30 to-background" />
-        <div className="container mx-auto px-4 relative z-10">
-          <div className="max-w-2xl mx-auto text-center">
-            <h1 className="font-display text-4xl md:text-5xl font-semibold text-foreground mb-6">
-              Выберите свой путь к спокойствию
+      <main className="pt-24 md:pt-32 pb-24">
+        <div className="container mx-auto px-4">
+          {/* Header */}
+          <div className="text-center max-w-2xl mx-auto mb-16">
+            <span className="text-sm font-medium text-primary uppercase tracking-wider mb-4 block">
+              Тарифы
+            </span>
+            <h1 className="font-heading text-4xl md:text-5xl font-semibold text-foreground mb-6">
+              Выберите свой путь к покою
             </h1>
-            <p className="text-lg text-muted-foreground leading-relaxed">
-              Начните бесплатно или получите полный доступ к поддержке с Премиум тарифом
+            <p className="text-muted-foreground text-lg">
+              Начните бесплатно и переходите на платный план, когда будете готовы. Без обязательств, отмена в любое время.
             </p>
           </div>
-        </div>
-      </section>
 
-      {/* Pricing Cards */}
-      <section className="py-16 md:py-24 bg-gradient-to-b from-bay-fog/20 to-background">
-        <div className="container mx-auto px-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-            {plans.map((plan) => {
-              const isActive = isPlanActive(plan.tier);
+          {/* Pricing cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+            {plans.map((plan, index) => {
+              const isPlanLoading = loadingPlan === plan.name;
+              const isActivePlan = activeSubscription && (
+                (plan.name === "Премиум" && activeSubscription.plan_name === "monthly") ||
+                (plan.name === "Годовой Премиум" && activeSubscription.plan_name === "yearly")
+              );
               
               return (
                 <div
-                  key={plan.name}
-                  className={`relative rounded-2xl border p-6 md:p-8 transition-all duration-500 hover:shadow-card ${
-                    plan.popular
-                      ? "border-primary bg-card shadow-soft scale-105 md:scale-110"
-                      : "border-border/50 bg-card/50"
-                  } ${isActive ? "ring-2 ring-accent" : ""}`}
+                  key={index}
+                  className={`relative rounded-2xl border p-8 transition-all duration-300 hover:-translate-y-1 ${
+                    isActivePlan
+                      ? "bg-card border-green-500 shadow-elevated ring-2 ring-green-500/20"
+                      : plan.popular
+                        ? "bg-card border-primary shadow-elevated"
+                        : "bg-card border-border shadow-soft hover:shadow-elevated"
+                  }`}
                 >
-                  {plan.popular && !isActive && (
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                      <div className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-primary text-primary-foreground text-xs font-medium">
-                        <Sparkles className="w-3 h-3" />
+                  {/* Active badge */}
+                  {isActivePlan && (
+                    <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+                      <div className="flex items-center gap-1.5 bg-green-500 text-white px-4 py-1.5 rounded-full text-sm font-medium">
+                        <Check size={14} />
+                        Активна
+                      </div>
+                    </div>
+                  )}
+                  {/* Popular badge */}
+                  {plan.popular && !isActivePlan && (
+                    <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+                      <div className="flex items-center gap-1.5 bg-primary text-primary-foreground px-4 py-1.5 rounded-full text-sm font-medium">
+                        <Sparkles size={14} />
                         Популярный
                       </div>
                     </div>
                   )}
-                  
-                  {isActive && (
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                      <div className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-accent text-accent-foreground text-xs font-medium">
-                        <CheckCircle className="w-3 h-3" />
-                        Ваш тариф
-                      </div>
-                    </div>
-                  )}
-                  
-                  <div className="text-center mb-6">
-                    <h3 className="font-display text-xl font-semibold text-foreground mb-2">
+
+                  {/* Plan header */}
+                  <div className="mb-6">
+                    <h3 className="font-heading text-2xl font-semibold text-foreground mb-2">
                       {plan.name}
                     </h3>
-                    <p className="text-sm text-muted-foreground mb-4">
+                    <p className="text-muted-foreground text-sm">
                       {plan.description}
                     </p>
-                    <div className="flex items-baseline justify-center gap-1">
-                      <span className="font-display text-4xl font-semibold text-foreground">
-                        {plan.price}
-                      </span>
-                      <span className="text-muted-foreground">₽</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {plan.period}
-                    </p>
-                    {plan.savings && (
-                      <p className="text-sm text-accent font-medium mt-2">
-                        {plan.savings}
-                      </p>
-                    )}
                   </div>
-                  
+
+                  {/* Price */}
+                  <div className="mb-6">
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-4xl font-heading font-semibold text-foreground">
+                        {plan.price}₽
+                      </span>
+                      <span className="text-muted-foreground text-sm">
+                        /{plan.period}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Features */}
                   <ul className="space-y-3 mb-8">
-                    {plan.features.map((feature) => (
-                      <li key={feature} className="flex items-start gap-3">
-                        <div className="w-5 h-5 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                          <Check className="w-3 h-3 text-accent" />
+                    {plan.features.map((feature, featureIndex) => (
+                      <li key={featureIndex} className="flex items-start gap-3">
+                        <div className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center mt-0.5 ${
+                          feature.premium && plan.isPremium
+                            ? "bg-amber-100 dark:bg-amber-900/30"
+                            : "bg-seafoam/50"
+                        }`}>
+                          {feature.premium && plan.isPremium ? (
+                            <Crown size={12} className="text-amber-500" />
+                          ) : (
+                            <Check size={12} className="text-primary" />
+                          )}
                         </div>
-                        <span className="text-sm text-foreground">{feature}</span>
-                      </li>
-                    ))}
-                    {plan.limitations.map((limitation) => (
-                      <li key={limitation} className="flex items-start gap-3 opacity-60">
-                        <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center flex-shrink-0 mt-0.5">
-                          <div className="w-2 h-0.5 bg-muted-foreground" />
-                        </div>
-                        <span className="text-sm text-muted-foreground">{limitation}</span>
+                        <span className="text-foreground/80 text-sm">{feature.text}</span>
                       </li>
                     ))}
                   </ul>
-                  
-                  {isActive ? (
-                    <Button 
-                      variant="outline" 
-                      className="w-full cursor-default"
-                      disabled
-                    >
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      Активен
-                    </Button>
-                  ) : plan.price === "0" ? (
-                    <Link to="/chat" className="block">
-                      <Button variant={plan.variant} className="w-full">
-                        {plan.cta}
-                      </Button>
-                    </Link>
-                  ) : (
-                    <Button 
-                      variant={plan.variant} 
-                      className="w-full"
-                      onClick={() => setPaymentModal({
-                        open: true,
-                        planName: plan.name,
-                        price: plan.price,
-                        period: plan.period,
-                      })}
-                    >
-                      {plan.cta}
-                    </Button>
-                  )}
+
+                  {/* CTA */}
+                  <Button 
+                    variant={isActivePlan ? "outline" : plan.variant} 
+                    className="w-full"
+                    onClick={() => handlePlanClick(plan)}
+                    disabled={isPlanLoading || isLoading || isActivePlan}
+                  >
+                    {isPlanLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Загрузка...
+                      </>
+                    ) : isActivePlan ? (
+                      "Текущий план"
+                    ) : (
+                      plan.cta
+                    )}
+                  </Button>
                 </div>
               );
             })}
           </div>
-        </div>
-      </section>
 
-      {/* FAQ Link */}
-      <section className="py-16 bg-gradient-to-b from-background to-bay-fog/10">
-        <div className="container mx-auto px-4 text-center">
-          <h2 className="font-display text-2xl font-semibold text-foreground mb-4">
-            Есть вопросы?
-          </h2>
-          <p className="text-muted-foreground mb-6">
-            Посетите наш раздел FAQ для получения ответов на частые вопросы
-          </p>
-          <Link to="/faq">
-            <Button variant="mist">
-              Перейти в FAQ
-            </Button>
-          </Link>
-        </div>
-      </section>
-
-      {/* Guarantee */}
-      <section className="py-16 md:py-24">
-        <div className="container mx-auto px-4">
-          <div className="max-w-2xl mx-auto text-center">
-            <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-6">
-              <Check className="w-8 h-8 text-accent" />
-            </div>
-            <h2 className="font-display text-2xl md:text-3xl font-semibold text-foreground mb-4">
-              Гарантия возврата средств
-            </h2>
-            <p className="text-muted-foreground leading-relaxed mb-6">
-              Если в течение 14 дней после оплаты вы решите, что Quiet Bay вам не подходит, 
-              мы вернём полную стоимость подписки без лишних вопросов.
-            </p>
-            <div className="bg-bay-fog/30 rounded-lg p-4 max-w-lg mx-auto">
-              <p className="text-sm text-muted-foreground">
-                Продукт является цифровым. Доставка в физическом виде не осуществляется.
+          {/* Service Description */}
+          <div className="max-w-3xl mx-auto mt-16">
+            <div className="bg-card border border-border rounded-2xl p-8 shadow-soft">
+              <h3 className="font-heading text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+                <Info size={20} className="text-primary" />
+                Что входит в подписку
+              </h3>
+              <p className="text-foreground/80 mb-4">
+                Вы получаете доступ к диалогам с ИИ-ассистентом для эмоциональной поддержки и саморефлексии. 
+                Подписка активируется сразу после оплаты и действует в течение выбранного периода.
               </p>
+              <ul className="text-foreground/70 text-sm space-y-2 mb-6">
+                <li>• Безлимитные сообщения с ИИ-ассистентом</li>
+                <li>• Расширенная история чатов</li>
+                <li>• Продвинутые упражнения для саморефлексии</li>
+                <li>• Возможность отмены в любое время в личном кабинете</li>
+              </ul>
+              
+              <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+                <p className="text-foreground/80 text-sm">
+                  <strong>Важно:</strong> Quiet Bay — это сервис эмоциональной поддержки, а не медицинская услуга. 
+                  ИИ не ставит диагнозы и не заменяет консультацию врача или психолога.
+                </p>
+              </div>
             </div>
           </div>
+
+          {/* Medical Disclaimer */}
+          <div className="max-w-3xl mx-auto mt-8">
+            <div className="bg-secondary/50 border border-border rounded-xl p-6">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="w-6 h-6 text-primary flex-shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-semibold text-foreground mb-2">Отказ от медицинской ответственности</h4>
+                  <p className="text-foreground/70 text-sm leading-relaxed">
+                    Quiet Bay не является медицинским сервисом. ИИ не ставит диагнозы и не заменяет специалиста. 
+                    В кризисных ситуациях рекомендуем обращаться за профессиональной помощью.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Payment Info */}
+          <div className="max-w-3xl mx-auto mt-8">
+            <div className="bg-card border border-border rounded-xl p-6">
+              <div className="flex items-start gap-3">
+                <CreditCard className="w-6 h-6 text-primary flex-shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-semibold text-foreground mb-2">Безопасная оплата</h4>
+                  <ul className="text-foreground/70 text-sm space-y-1">
+                    <li>• Оплата проходит через ЮKassa</li>
+                    <li>• Платёж защищён по стандарту PCI DSS</li>
+                    <li>• Можно отменить подписку в личном кабинете</li>
+                    <li>• Возврат средств в течение 14 дней</li>
+                  </ul>
+                  <div className="flex gap-4 mt-4 text-sm">
+                    <Link to="/payment-terms" className="text-primary hover:underline">
+                      Условия оплаты и возврата
+                    </Link>
+                    <Link to="/contacts" className="text-primary hover:underline">
+                      Контакты продавца
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* FAQ link */}
+          <div className="text-center mt-12">
+            <p className="text-muted-foreground mb-4">
+              Есть вопросы о наших планах?
+            </p>
+            <Link to="/faq" className="text-primary hover:underline font-medium">
+              Посмотрите наши частые вопросы →
+            </Link>
+          </div>
         </div>
-      </section>
+      </main>
 
       <Footer />
-
-      <PaymentModal
-        open={paymentModal.open}
-        onOpenChange={(open) => setPaymentModal({ ...paymentModal, open })}
-        planName={paymentModal.planName}
-        price={paymentModal.price}
-        period={paymentModal.period}
-      />
     </div>
   );
 };

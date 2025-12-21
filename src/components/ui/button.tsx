@@ -5,27 +5,34 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium ring-offset-background transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 font-body",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium font-body transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90 shadow-soft hover:shadow-glow",
-        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-        outline: "border border-border bg-background hover:bg-secondary hover:text-secondary-foreground",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost: "hover:bg-secondary hover:text-secondary-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+        default:
+          "bg-primary text-primary-foreground shadow-soft hover:shadow-elevated hover:bg-primary/90",
+        destructive:
+          "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
+        outline:
+          "border border-border bg-transparent text-foreground hover:bg-secondary hover:text-secondary-foreground",
+        secondary:
+          "bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80",
+        ghost: 
+          "text-foreground hover:bg-secondary hover:text-secondary-foreground",
+        link: 
+          "text-primary underline-offset-4 hover:underline",
         // Quiet Bay custom variants
-        calm: "bg-bay-twilight text-primary-foreground hover:bg-bay-deep shadow-soft hover:shadow-glow transition-all duration-500",
-        mist: "bg-bay-fog/50 text-foreground border border-bay-mist/30 hover:bg-bay-fog hover:border-bay-mist/50 backdrop-blur-sm",
-        warm: "bg-bay-cream text-foreground hover:bg-bay-warm border border-bay-mist/20",
-        hero: "bg-primary text-primary-foreground hover:bg-bay-deep shadow-lg hover:shadow-glow px-8 py-6 text-base font-medium tracking-wide transition-all duration-500 hover:-translate-y-0.5",
+        bay: 
+          "bg-gradient-to-r from-bay-deep to-primary text-primary-foreground shadow-elevated hover:shadow-glow hover:scale-[1.02] active:scale-[0.98]",
+        calm:
+          "bg-fog text-foreground border border-border hover:bg-secondary hover:border-bay-light",
+        seafoam:
+          "bg-seafoam text-accent-foreground hover:bg-accent shadow-soft",
       },
       size: {
-        default: "h-10 px-4 py-2",
-        sm: "h-9 rounded-md px-3",
-        lg: "h-11 rounded-lg px-8",
-        xl: "h-14 rounded-xl px-10 text-base",
+        default: "h-11 px-6 py-2",
+        sm: "h-9 rounded-md px-4 text-xs",
+        lg: "h-14 rounded-xl px-10 text-base",
         icon: "h-10 w-10",
       },
     },

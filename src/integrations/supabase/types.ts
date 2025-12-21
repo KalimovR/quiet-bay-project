@@ -14,85 +14,295 @@ export type Database = {
   }
   public: {
     Tables: {
-      anonymous_chat_usage: {
+      chat_feedback: {
         Row: {
           created_at: string
           id: string
-          ip_address: string
-          seconds_used: number
-          updated_at: string
-          usage_date: string
+          ip_address: string | null
+          message: string | null
+          photo_url: string | null
+          rating: number
+          session_id: string | null
+          user_id: string | null
         }
         Insert: {
           created_at?: string
           id?: string
-          ip_address: string
-          seconds_used?: number
-          updated_at?: string
-          usage_date?: string
+          ip_address?: string | null
+          message?: string | null
+          photo_url?: string | null
+          rating: number
+          session_id?: string | null
+          user_id?: string | null
         }
         Update: {
           created_at?: string
           id?: string
-          ip_address?: string
-          seconds_used?: number
+          ip_address?: string | null
+          message?: string | null
+          photo_url?: string | null
+          rating?: number
+          session_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_feedback_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "chat_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chat_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          role: string
+          session_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          role: string
+          session_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          role?: string
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_messages_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "chat_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chat_sessions: {
+        Row: {
+          created_at: string
+          id: string
+          ip_address: string | null
+          title: string | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          title?: string | null
           updated_at?: string
-          usage_date?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          title?: string | null
+          updated_at?: string
+          user_id?: string | null
         }
         Relationships: []
       }
       chat_usage: {
         Row: {
           created_at: string
+          date: string
           id: string
-          seconds_used: number
+          ip_address: string
+          minutes_used: number
           updated_at: string
-          usage_date: string
-          user_id: string
         }
         Insert: {
           created_at?: string
+          date?: string
           id?: string
-          seconds_used?: number
+          ip_address: string
+          minutes_used?: number
           updated_at?: string
-          usage_date?: string
-          user_id: string
         }
         Update: {
           created_at?: string
+          date?: string
           id?: string
-          seconds_used?: number
+          ip_address?: string
+          minutes_used?: number
           updated_at?: string
-          usage_date?: string
-          user_id?: string
         }
         Relationships: []
       }
-      conversations: {
+      course_progress: {
+        Row: {
+          completed: boolean
+          course_id: string
+          created_at: string
+          id: string
+          last_watched_at: string
+          progress_percent: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed?: boolean
+          course_id: string
+          created_at?: string
+          id?: string
+          last_watched_at?: string
+          progress_percent?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed?: boolean
+          course_id?: string
+          created_at?: string
+          id?: string
+          last_watched_at?: string
+          progress_percent?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "course_progress_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      courses: {
+        Row: {
+          created_at: string
+          description: string | null
+          duration_minutes: number | null
+          id: string
+          is_free: boolean
+          lesson_number: number
+          price: number | null
+          title: string
+          video_url: string | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          duration_minutes?: number | null
+          id?: string
+          is_free?: boolean
+          lesson_number: number
+          price?: number | null
+          title: string
+          video_url?: string | null
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          duration_minutes?: number | null
+          id?: string
+          is_free?: boolean
+          lesson_number?: number
+          price?: number | null
+          title?: string
+          video_url?: string | null
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          email: string | null
+          id: string
+          updated_at: string
+          username: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string | null
+          id: string
+          updated_at?: string
+          username?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          updated_at?: string
+          username?: string | null
+        }
+        Relationships: []
+      }
+      spam_logs: {
         Row: {
           created_at: string
           id: string
-          title: string | null
-          updated_at: string
-          user_id: string
+          ip_address: string
+          message_content: string | null
+          spam_type: string
+          user_id: string | null
         }
         Insert: {
           created_at?: string
           id?: string
-          title?: string | null
-          updated_at?: string
-          user_id: string
+          ip_address: string
+          message_content?: string | null
+          spam_type: string
+          user_id?: string | null
         }
         Update: {
           created_at?: string
           id?: string
-          title?: string | null
-          updated_at?: string
+          ip_address?: string
+          message_content?: string | null
+          spam_type?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      subscriptions: {
+        Row: {
+          activated_at: string
+          created_at: string
+          expires_at: string | null
+          id: string
+          plan_name: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          activated_at?: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          plan_name: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          activated_at?: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          plan_name?: string
+          status?: string
           user_id?: string
         }
         Relationships: []
       }
-      course_purchases: {
+      user_courses: {
         Row: {
           course_id: string
           id: string
@@ -111,189 +321,56 @@ export type Database = {
           purchased_at?: string
           user_id?: string
         }
-        Relationships: []
-      }
-      gifts: {
-        Row: {
-          created_at: string
-          created_by: string
-          duration_days: number | null
-          expires_at: string | null
-          gift_type: string
-          id: string
-          message: string | null
-          read: boolean
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          created_by: string
-          duration_days?: number | null
-          expires_at?: string | null
-          gift_type: string
-          id?: string
-          message?: string | null
-          read?: boolean
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          created_by?: string
-          duration_days?: number | null
-          expires_at?: string | null
-          gift_type?: string
-          id?: string
-          message?: string | null
-          read?: boolean
-          user_id?: string
-        }
-        Relationships: []
-      }
-      lesson_progress: {
-        Row: {
-          completed: boolean
-          created_at: string
-          id: string
-          last_position: number
-          lesson_id: string
-          progress_percent: number
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          completed?: boolean
-          created_at?: string
-          id?: string
-          last_position?: number
-          lesson_id: string
-          progress_percent?: number
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          completed?: boolean
-          created_at?: string
-          id?: string
-          last_position?: number
-          lesson_id?: string
-          progress_percent?: number
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      messages: {
-        Row: {
-          content: string
-          conversation_id: string
-          created_at: string
-          id: string
-          role: string
-        }
-        Insert: {
-          content: string
-          conversation_id: string
-          created_at?: string
-          id?: string
-          role: string
-        }
-        Update: {
-          content?: string
-          conversation_id?: string
-          created_at?: string
-          id?: string
-          role?: string
-        }
         Relationships: [
           {
-            foreignKeyName: "messages_conversation_id_fkey"
-            columns: ["conversation_id"]
+            foreignKeyName: "user_courses_course_id_fkey"
+            columns: ["course_id"]
             isOneToOne: false
-            referencedRelation: "conversations"
+            referencedRelation: "courses"
             referencedColumns: ["id"]
           },
         ]
       }
-      phone_otp_codes: {
+      user_presence: {
         Row: {
-          code: string
           created_at: string
-          expires_at: string
-          id: string
-          phone: string
-          used: boolean
-        }
-        Insert: {
-          code: string
-          created_at?: string
-          expires_at?: string
-          id?: string
-          phone: string
-          used?: boolean
-        }
-        Update: {
-          code?: string
-          created_at?: string
-          expires_at?: string
-          id?: string
-          phone?: string
-          used?: boolean
-        }
-        Relationships: []
-      }
-      profiles: {
-        Row: {
-          avatar_url: string | null
-          created_at: string
+          current_activity: string | null
+          current_course_id: string | null
           email: string | null
           id: string
-          name: string | null
-          updated_at: string
-        }
-        Insert: {
-          avatar_url?: string | null
-          created_at?: string
-          email?: string | null
-          id: string
-          name?: string | null
-          updated_at?: string
-        }
-        Update: {
-          avatar_url?: string | null
-          created_at?: string
-          email?: string | null
-          id?: string
-          name?: string | null
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      reviews: {
-        Row: {
-          created_at: string
-          id: string
-          rating: number
-          text: string
-          updated_at: string
-          user_id: string
+          last_seen_at: string
+          status: string
+          user_id: string | null
         }
         Insert: {
           created_at?: string
+          current_activity?: string | null
+          current_course_id?: string | null
+          email?: string | null
           id?: string
-          rating: number
-          text: string
-          updated_at?: string
-          user_id: string
+          last_seen_at?: string
+          status?: string
+          user_id?: string | null
         }
         Update: {
           created_at?: string
+          current_activity?: string | null
+          current_course_id?: string | null
+          email?: string | null
           id?: string
-          rating?: number
-          text?: string
-          updated_at?: string
-          user_id?: string
+          last_seen_at?: string
+          status?: string
+          user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "user_presence_current_course_id_fkey"
+            columns: ["current_course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
@@ -305,7 +382,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
-          role: Database["public"]["Enums"]["app_role"]
+          role?: Database["public"]["Enums"]["app_role"]
           user_id: string
         }
         Update: {
@@ -316,68 +393,11 @@ export type Database = {
         }
         Relationships: []
       }
-      user_subscriptions: {
-        Row: {
-          created_at: string
-          expires_at: string | null
-          id: string
-          starts_at: string
-          tier: Database["public"]["Enums"]["subscription_tier"]
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          expires_at?: string | null
-          id?: string
-          starts_at?: string
-          tier?: Database["public"]["Enums"]["subscription_tier"]
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          expires_at?: string | null
-          id?: string
-          starts_at?: string
-          tier?: Database["public"]["Enums"]["subscription_tier"]
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      apply_gift: {
-        Args: {
-          _duration_days: number
-          _gift_id: string
-          _gift_type: string
-          _user_id: string
-        }
-        Returns: undefined
-      }
-      get_all_users_for_admin: {
-        Args: never
-        Returns: {
-          avatar_url: string
-          created_at: string
-          email: string
-          has_course: boolean
-          name: string
-          subscription_expires_at: string
-          subscription_tier: string
-          user_id: string
-        }[]
-      }
-      get_user_tier: {
-        Args: { _user_id: string }
-        Returns: Database["public"]["Enums"]["subscription_tier"]
-      }
-      get_users_count: { Args: never; Returns: number }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -387,8 +407,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "moderator" | "user"
-      subscription_tier: "free" | "premium" | "annual"
+      app_role: "admin" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -516,8 +535,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "moderator", "user"],
-      subscription_tier: ["free", "premium", "annual"],
+      app_role: ["admin", "user"],
     },
   },
 } as const

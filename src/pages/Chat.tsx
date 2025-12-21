@@ -1,9 +1,6 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState, useRef, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Send, AlertTriangle, MessageSquare, Plus, Trash2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,83 +11,81 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { ArrowLeft, Send, Loader2, Plus, MessageSquare, Trash2, PanelLeftOpen, PanelLeftClose, X } from "lucide-react";
+import { useChatSessions, ChatMessage } from "@/hooks/useChatSessions";
+import { useUserPresence } from "@/hooks/useUserPresence";
+import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
+import { FeedbackDialog } from "@/components/chat/FeedbackDialog";
+import { CooldownIndicator } from "@/components/chat/CooldownIndicator";
 
-const MAX_CONVERSATIONS = 3;
+const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
 
-interface Message {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  timestamp: Date;
-}
-
-interface Conversation {
-  id: string;
-  title: string;
-  created_at: string;
-}
-
-const FREE_DAILY_LIMIT_SECONDS = 35 * 60; // 35 minutes
-const MESSAGE_DELAY_MS = 1420; // 1.42 seconds delay between messages
+const MOTIVATIONAL_WORDS = [
+  "Вы на правильном пути",
+  "Каждый шаг важен",
+  "Вы не одиноки",
+  "Вы справитесь",
+  "Здесь безопасно",
+  "Вы заслуживаете счастья",
+  "Всё получится",
+  "Вы сильнее, чем думаете",
+];
 
 const Chat = () => {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const {
+    sessions,
+    currentSession,
+    messages,
+    user,
+    subscription,
+    loading: sessionsLoading,
+    getSessionLimit,
+    createSession,
+    addMessage,
+    updateLastMessage,
+    deleteSession,
+    selectSession,
+    setMessages,
+  } = useChatSessions();
+
+  // Track user presence in chat
+  useUserPresence('chat');
+
   const [input, setInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
-  const [user, setUser] = useState<any>(null);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
-  const [showSidebar, setShowSidebar] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [userTier, setUserTier] = useState<string>('free');
-  const [dailySecondsUsed, setDailySecondsUsed] = useState(0);
-  const [isLimitReached, setIsLimitReached] = useState(false);
-  const [showNewChatWarning, setShowNewChatWarning] = useState(false);
-  const [isSendingBlocked, setIsSendingBlocked] = useState(false);
-  const sessionStartRef = useRef<number | null>(null);
-  const usageIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [replaceDialogOpen, setReplaceDialogOpen] = useState(false);
+  const [isCreatingChat, setIsCreatingChat] = useState(false);
+  const [streamingContent, setStreamingContent] = useState("");
+  const [currentWordIndex, setCurrentWordIndex] = useState(0);
+  const [lastMessageTime, setLastMessageTime] = useState<number>(0);
+  const [cooldownActive, setCooldownActive] = useState(false);
+  const [cooldownRemainingMs, setCooldownRemainingMs] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const isInitializedRef = useRef(false);
-  const lastMessageTimeRef = useRef<number>(0);
-  const navigate = useNavigate();
-
-  // Рамка сеанса - показывается только при первом входе в чат (новый разговор)
-  const sessionFrameMessage = "Здесь можно говорить так, как получается.\n\nЯ не буду торопить и не буду давить.\n\nМы можем идти медленно или конкретно — как тебе сейчас ближе.";
-
-  const welcomeMessages = [
-    "Я здесь. Если хочешь — можешь просто написать, что сейчас внутри.",
-    "Иногда сложно понять, что чувствуешь. Можем попробовать разобраться вместе.",
-    "Можно не знать, с чего начать. Пиши как получается — я рядом.",
-    "Привет. Не нужно подбирать слова — просто напиши, что на душе.",
-    "Здесь можно быть честным. Что сейчас происходит?"
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const hasPromptedReplaceRef = useRef(false);
+  const { toast } = useToast();
+  
+  const MESSAGE_COOLDOWN_MS = 1500;
+  const MAX_MESSAGE_LENGTH = 1000;
+  
+  // Prompt injection protection patterns
+  const FORBIDDEN_PATTERNS = [
+    "ignore previous",
+    "system prompt",
+    "ты теперь",
+    "act as",
+    "forget your instructions",
+    "забудь инструкции",
+    "игнорируй",
+    "new role",
+    "новая роль"
   ];
-
-// Функция для получения приветственного сообщения с рамкой (для новых разговоров)
-const getWelcomeWithFrame = (): Message[] => {
-  const randomWelcome = welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)];
-  return [
-    {
-      id: "session-frame",
-      role: "assistant",
-      content: sessionFrameMessage,
-      timestamp: new Date(),
-    },
-    {
-      id: "welcome",
-      role: "assistant",
-      content: randomWelcome,
-      timestamp: new Date(Date.now() + 100), // Slightly later to ensure order
-    }
-  ];
-};
-
-// Обычное приветственное сообщение (для существующих пустых разговоров)
-
-  const welcomeMessage: Message = {
-    id: "welcome",
-    role: "assistant",
-    content: welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)],
-    timestamp: new Date(),
+  
+  const containsForbiddenPattern = (text: string): boolean => {
+    const lowerText = text.toLowerCase();
+    return FORBIDDEN_PATTERNS.some(pattern => lowerText.includes(pattern.toLowerCase()));
   };
 
   const scrollToBottom = () => {
@@ -99,808 +94,566 @@ const getWelcomeWithFrame = (): Message[] => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, streamingContent]);
 
-  // Limit expired message
-  const limitExpiredMessage: Message = {
-    id: "limit-expired",
-    role: "assistant",
-    content: "К сожалению, ваше бесплатное время использования чата на сегодня закончилось. Мне было приятно общаться с вами.\n\nЧтобы продолжить наши беседы без ограничений, вы можете перейти на Premium-тариф. Это даст вам неограниченный доступ к нашему психологу 24/7.",
-    timestamp: new Date(),
-  };
-
-  // Upgrade prompt message
-  const upgradeMessage: Message = {
-    id: "upgrade-prompt",
-    role: "assistant",
-    content: "💎 Перейти на Premium — безлимитный доступ к чату, приоритетная поддержка и эксклюзивные материалы. Посмотрите наши тарифы на странице /pricing",
-    timestamp: new Date(),
-  };
-
-  // Load user subscription tier
-  const loadUserTier = useCallback(async (userId: string) => {
-    const { data } = await supabase
-      .from('user_subscriptions')
-      .select('tier')
-      .eq('user_id', userId)
-      .maybeSingle();
-    
-    const tier = data?.tier || 'free';
-    setUserTier(tier);
-    return tier;
-  }, []);
-
-  // Load daily chat usage for logged-in users
-  const loadDailyUsage = useCallback(async (userId: string) => {
-    const today = new Date().toISOString().split('T')[0];
-    const { data } = await supabase
-      .from('chat_usage')
-      .select('seconds_used')
-      .eq('user_id', userId)
-      .eq('usage_date', today)
-      .maybeSingle();
-    
-    const used = data?.seconds_used || 0;
-    setDailySecondsUsed(used);
-    return used;
-  }, []);
-
-  // Check anonymous user limit via edge function (IP-based)
-  const checkAnonymousLimit = useCallback(async (): Promise<{ isLimitReached: boolean; secondsUsed: number }> => {
-    try {
-      const response = await supabase.functions.invoke('check-chat-limit', {
-        body: { action: 'check' }
-      });
-      
-      if (response.error) {
-        console.error('Error checking anonymous limit:', response.error);
-        return { isLimitReached: false, secondsUsed: 0 };
-      }
-      
-      return {
-        isLimitReached: response.data?.isLimitReached || false,
-        secondsUsed: response.data?.secondsUsed || 0
-      };
-    } catch (error) {
-      console.error('Error checking anonymous limit:', error);
-      return { isLimitReached: false, secondsUsed: 0 };
-    }
-  }, []);
-
-  // Update anonymous user usage via edge function
-  const updateAnonymousUsage = useCallback(async (secondsToAdd: number) => {
-    try {
-      const response = await supabase.functions.invoke('check-chat-limit', {
-        body: { action: 'update', secondsToAdd }
-      });
-      
-      if (response.data) {
-        setDailySecondsUsed(response.data.secondsUsed);
-        return response.data;
-      }
-    } catch (error) {
-      console.error('Error updating anonymous usage:', error);
-    }
-    return null;
-  }, []);
-
-  // Update usage in database for logged-in users
-  const updateUsage = useCallback(async (userId: string, secondsToAdd: number) => {
-    const today = new Date().toISOString().split('T')[0];
-    
-    const { data: existing } = await supabase
-      .from('chat_usage')
-      .select('id, seconds_used')
-      .eq('user_id', userId)
-      .eq('usage_date', today)
-      .maybeSingle();
-    
-    if (existing) {
-      const newTotal = existing.seconds_used + secondsToAdd;
-      await supabase
-        .from('chat_usage')
-        .update({ seconds_used: newTotal })
-        .eq('id', existing.id);
-      setDailySecondsUsed(newTotal);
-      return newTotal;
-    } else {
-      await supabase
-        .from('chat_usage')
-        .insert({ user_id: userId, usage_date: today, seconds_used: secondsToAdd });
-      setDailySecondsUsed(secondsToAdd);
-      return secondsToAdd;
-    }
-  }, []);
-
-  // Start session tracking
-  const startSessionTracking = useCallback(() => {
-    if (!sessionStartRef.current) {
-      sessionStartRef.current = Date.now();
-    }
-  }, []);
-
-  // Stop session tracking and save usage
-  const stopSessionTracking = useCallback(async () => {
-    if (sessionStartRef.current) {
-      const sessionDuration = Math.floor((Date.now() - sessionStartRef.current) / 1000);
-      if (sessionDuration > 0) {
-        if (user) {
-          await updateUsage(user.id, sessionDuration);
-        } else {
-          await updateAnonymousUsage(sessionDuration);
-        }
-      }
-      sessionStartRef.current = null;
-    }
-  }, [user, updateUsage, updateAnonymousUsage]);
-
-  // Show limit reached messages in chat
-  const showLimitReachedMessages = useCallback(() => {
-    setMessages(prev => {
-      // Check if limit messages already shown
-      if (prev.some(m => m.id === 'limit-expired')) {
-        return prev;
-      }
-      return [...prev, limitExpiredMessage, upgradeMessage];
-    });
-    setIsLimitReached(true);
-  }, []);
-
-  // Check if limit is reached
-  const checkLimit = useCallback((seconds: number, tier: string) => {
-    if (tier !== 'free') {
-      return false;
-    }
-    if (seconds >= FREE_DAILY_LIMIT_SECONDS) {
-      showLimitReachedMessages();
-      return true;
-    }
-    return false;
-  }, [showLimitReachedMessages]);
-
-  // Effect to track usage periodically (both logged-in and anonymous)
+  // Auto-resize textarea
   useEffect(() => {
-    // Only track for free tier (logged-in) or anonymous users
-    const shouldTrack = (!user || userTier === 'free') && !isLimitReached;
-    
-    if (shouldTrack) {
-      usageIntervalRef.current = setInterval(async () => {
-        if (sessionStartRef.current) {
-          const sessionDuration = Math.floor((Date.now() - sessionStartRef.current) / 1000);
-          const totalUsed = dailySecondsUsed + sessionDuration;
-          
-          if (totalUsed >= FREE_DAILY_LIMIT_SECONDS) {
-            await stopSessionTracking();
-            showLimitReachedMessages();
-          }
-        }
-      }, 30000); // Check every 30 seconds
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
     }
+  }, [input]);
 
-    return () => {
-      if (usageIntervalRef.current) {
-        clearInterval(usageIntervalRef.current);
-      }
-    };
-  }, [user, userTier, dailySecondsUsed, isLimitReached, stopSessionTracking, showLimitReachedMessages]);
-
-  // Save usage on page unload
+  // Rotate motivational words
   useEffect(() => {
-    const handleBeforeUnload = () => {
-      if (sessionStartRef.current && user) {
-        const sessionDuration = Math.floor((Date.now() - sessionStartRef.current) / 1000);
-        if (sessionDuration > 0) {
-          // Use sendBeacon for reliable tracking on unload
-          navigator.sendBeacon(
-            `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/chat_usage`,
-            JSON.stringify({})
-          );
-        }
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [user]);
-
-  // Check auth and load conversations
-  useEffect(() => {
-    let isMounted = true;
-    
-    const initializeChat = async (session: any) => {
-      if (!isMounted) return;
-      
-      if (session?.user) {
-        // Logged-in user
-        setUser(session.user);
-        
-        // Only load conversations once
-        if (!isInitializedRef.current) {
-          isInitializedRef.current = true;
-          await loadConversationsOnce();
-        }
-        
-        const tier = await loadUserTier(session.user.id);
-        const used = await loadDailyUsage(session.user.id);
-        checkLimit(used, tier);
-        startSessionTracking();
-      } else {
-        // Anonymous user - check IP-based limit
-        setUser(null);
-        setMessages(getWelcomeWithFrame()); // Рамка сеанса для первого входа
-        setIsLoading(false);
-        isInitializedRef.current = true;
-        
-        // Check anonymous limit
-        const { isLimitReached: limitReached, secondsUsed } = await checkAnonymousLimit();
-        if (!isMounted) return;
-        setDailySecondsUsed(secondsUsed);
-        if (limitReached) {
-          showLimitReachedMessages();
-        } else {
-          startSessionTracking();
-        }
-      }
-    };
-    
-    const loadConversationsOnce = async () => {
-      const { data, error } = await supabase
-        .from('conversations')
-        .select('*')
-        .order('updated_at', { ascending: false });
-
-      if (!isMounted) return;
-      
-      if (error) {
-        console.error('Error loading conversations:', error);
-        setMessages(getWelcomeWithFrame()); // Рамка сеанса для первого разговора
-        setIsLoading(false);
-        return;
-      }
-
-      setConversations(data || []);
-      
-      if (data && data.length > 0) {
-        await loadMessagesOnce(data[0].id);
-      } else {
-        setMessages([welcomeMessage]);
-        setIsLoading(false);
-      }
-    };
-    
-    const loadMessagesOnce = async (conversationId: string) => {
-      setCurrentConversationId(conversationId);
-
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true });
-
-      if (!isMounted) return;
-      
-      if (error) {
-        console.error('Error loading messages:', error);
-        setMessages([welcomeMessage]);
-      } else if (data && data.length > 0) {
-        setMessages(data.map(msg => ({
-          id: msg.id,
-          role: msg.role as "user" | "assistant",
-          content: msg.content,
-          timestamp: new Date(msg.created_at),
-        })));
-      } else {
-        setMessages([welcomeMessage]);
-      }
-      setIsLoading(false);
-    };
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      // Only handle on initial load or sign in/out
-      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
-        initializeChat(session);
-      }
-    });
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!isInitializedRef.current) {
-        initializeChat(session);
-      }
-    });
-
-    return () => {
-      isMounted = false;
-      subscription.unsubscribe();
-      stopSessionTracking();
-    };
+    const interval = setInterval(() => {
+      setCurrentWordIndex((prev) => (prev + 1) % MOTIVATIONAL_WORDS.length);
+    }, 5000);
+    return () => clearInterval(interval);
   }, []);
 
-  const loadConversations = async () => {
-    const { data, error } = await supabase
-      .from('conversations')
-      .select('*')
-      .order('updated_at', { ascending: false });
+  // Create new session when page opens (don't auto-select old sessions)
+  useEffect(() => {
+    if (sessionsLoading) return;
 
-    if (error) {
-      console.error('Error loading conversations:', error);
-      setIsLoading(false);
-      return;
-    }
+    const limit = getSessionLimit();
+    const canCreateMore = limit === Infinity || sessions.length < limit;
 
-    setConversations(data || []);
-    
-    if (data && data.length > 0) {
-      loadMessages(data[0].id);
-    } else {
-      setMessages([welcomeMessage]);
-      setIsLoading(false);
-    }
-  };
-
-  const loadMessages = async (conversationId: string) => {
-    setCurrentConversationId(conversationId);
-    setIsLoading(true);
-
-    const { data, error } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      console.error('Error loading messages:', error);
-      setMessages([welcomeMessage]);
-    } else if (data && data.length > 0) {
-      setMessages(data.map(msg => ({
-        id: msg.id,
-        role: msg.role as "user" | "assistant",
-        content: msg.content,
-        timestamp: new Date(msg.created_at),
-      })));
-    } else {
-      setMessages([welcomeMessage]);
-    }
-    setIsLoading(false);
-  };
-
-  const handleNewConversationClick = () => {
-    if (!user) {
-      toast.error("Войдите, чтобы сохранять историю разговоров");
-      navigate('/auth');
-      return;
-    }
-
-    // If we're at max, show warning
-    if (conversations.length >= MAX_CONVERSATIONS) {
-      setShowNewChatWarning(true);
-    } else {
-      createNewConversation();
-    }
-  };
-
-  const createNewConversation = async () => {
-    if (!user) return;
-
-    // If at max, delete the oldest conversation first
-    if (conversations.length >= MAX_CONVERSATIONS) {
-      const oldestConversation = conversations[conversations.length - 1];
-      const { error: deleteError } = await supabase
-        .from('conversations')
-        .delete()
-        .eq('id', oldestConversation.id);
-
-      if (deleteError) {
-        console.error('Error deleting oldest conversation:', deleteError);
-        toast.error("Ошибка удаления старого разговора");
-        return;
-      }
-      
-      setConversations(prev => prev.filter(c => c.id !== oldestConversation.id));
-    }
-
-    const { data, error } = await supabase
-      .from('conversations')
-      .insert({ user_id: user.id, title: 'Новый разговор' })
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error creating conversation:', error);
-      toast.error("Ошибка создания разговора");
-      return;
-    }
-
-    setConversations(prev => [data, ...prev]);
-    setCurrentConversationId(data.id);
-    setMessages(getWelcomeWithFrame()); // Показываем рамку сеанса для нового разговора
-    setShowSidebar(false);
-  };
-
-  const deleteConversation = async (id: string) => {
-    const { error } = await supabase
-      .from('conversations')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      toast.error("Ошибка удаления разговора");
-      return;
-    }
-
-    setConversations(prev => prev.filter(c => c.id !== id));
-    
-    if (currentConversationId === id) {
-      const remaining = conversations.filter(c => c.id !== id);
-      if (remaining.length > 0) {
-        loadMessages(remaining[0].id);
-      } else {
-        setCurrentConversationId(null);
-        setMessages([welcomeMessage]);
+    // Only act if there's no session selected
+    if (!currentSession) {
+      if (canCreateMore) {
+        createSession();
+      } else if (!hasPromptedReplaceRef.current) {
+        // If at limit, show dialog to replace oldest (only once to avoid reopen loop)
+        hasPromptedReplaceRef.current = true;
+        setReplaceDialogOpen(true);
       }
     }
-  };
-
-  const saveMessage = async (message: Message, conversationId: string) => {
-    await supabase
-      .from('messages')
-      .insert({
-        conversation_id: conversationId,
-        role: message.role,
-        content: message.content,
-      });
-  };
+  }, [sessionsLoading, currentSession, getSessionLimit, sessions.length, createSession]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    const trimmedInput = input.trim();
     
-    // Check if sending is blocked due to rate limit
-    if (isSendingBlocked) {
-      const remainingTime = Math.ceil((MESSAGE_DELAY_MS - (Date.now() - lastMessageTimeRef.current)) / 1000);
-      toast.error(`Подождите ${remainingTime > 0 ? remainingTime : 1} сек. перед отправкой`);
+    if (!trimmedInput || isLoading || cooldownActive) return;
+    
+    // Message length validation
+    if (trimmedInput.length > MAX_MESSAGE_LENGTH) {
+      toast({
+        variant: "destructive",
+        title: "Сообщение слишком длинное",
+        description: `Максимальная длина — ${MAX_MESSAGE_LENGTH} символов.`,
+      });
       return;
     }
     
-    // Check limit for both logged-in free users and anonymous users
-    const isFreeUser = !user || userTier === 'free';
+    // Prompt injection protection
+    if (containsForbiddenPattern(trimmedInput)) {
+      toast({
+        variant: "destructive",
+        title: "Сообщение отклонено",
+        description: "Пожалуйста, переформулируйте ваше сообщение.",
+      });
+      return;
+    }
     
-    if (isFreeUser) {
-      const currentSessionSeconds = sessionStartRef.current 
-        ? Math.floor((Date.now() - sessionStartRef.current) / 1000) 
-        : 0;
-      const totalUsed = dailySecondsUsed + currentSessionSeconds;
+    const now = Date.now();
+    const timeSinceLastMessage = now - lastMessageTime;
+    
+    if (timeSinceLastMessage < MESSAGE_COOLDOWN_MS && lastMessageTime > 0) {
+      const remainingTime = MESSAGE_COOLDOWN_MS - timeSinceLastMessage;
+      const remainingSeconds = Math.ceil(remainingTime / 1000);
+      toast({
+        title: "Подождите",
+        description: `Пожалуйста, подождите ${remainingSeconds} сек. перед отправкой следующего сообщения.`,
+      });
+      setCooldownActive(true);
+      setCooldownRemainingMs(remainingTime);
       
-      if (totalUsed >= FREE_DAILY_LIMIT_SECONDS) {
-        await stopSessionTracking();
-        showLimitReachedMessages();
-        return;
-      }
+      // Start countdown
+      const interval = setInterval(() => {
+        setCooldownRemainingMs((prev) => {
+          if (prev <= 100) {
+            clearInterval(interval);
+            setCooldownActive(false);
+            return 0;
+          }
+          return prev - 100;
+        });
+      }, 100);
+      
+      return;
+    }
+    
+    setLastMessageTime(now);
+
+    let session = currentSession;
+    if (!session) {
+      session = await createSession();
+      if (!session) return;
     }
 
-    // Set rate limit - block sending for 1.42 seconds
-    setIsSendingBlocked(true);
-    lastMessageTimeRef.current = Date.now();
-    setTimeout(() => {
-      setIsSendingBlocked(false);
-    }, MESSAGE_DELAY_MS);
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: input.trim(),
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
+    const userContent = trimmedInput;
     setInput("");
-    setIsTyping(true);
+    setIsLoading(true);
 
-    // Create conversation if user is logged in and no current conversation
-    let convId = currentConversationId;
-    if (user && !convId) {
-      const { data, error } = await supabase
-        .from('conversations')
-        .insert({ user_id: user.id, title: userMessage.content.slice(0, 50) })
-        .select()
-        .single();
+    const isFirstMessage = messages.length === 0;
+    const greetingContent = "Здравствуйте. Вы в Quiet Bay.\n\nЗдесь не нужно ничего объяснять правильно или сразу понимать, что с вами происходит.\nМожно быть растерянным, уставшим или не знать, с чего начать — это нормально.\n\nМы никуда не спешим.\nЯ рядом и буду идти с вами шаг за шагом.\n\nЕсли хотите, начнём очень просто:\nнапишите одну фразу о том, что сейчас больше всего ощущается внутри.";
 
-      if (!error && data) {
-        convId = data.id;
-        setCurrentConversationId(data.id);
-        setConversations(prev => [data, ...prev]);
-      }
-    }
-
-    // Save user message
-    if (user && convId) {
-      await saveMessage(userMessage, convId);
-      // Update conversation title if it's the first message
-      if (messages.length <= 1) {
-        await supabase
-          .from('conversations')
-          .update({ title: userMessage.content.slice(0, 50) })
-          .eq('id', convId);
-        
-        setConversations(prev => 
-          prev.map(c => c.id === convId ? { ...c, title: userMessage.content.slice(0, 50) } : c)
-        );
-      }
-    }
-
-    // Get AI response
-    try {
-      // Build conversation history for AI (excluding welcome message)
-      const conversationHistory = messages
-        .filter(m => m.id !== "welcome")
-        .map(m => ({
-          role: m.role,
-          content: m.content,
-        }));
-      
-      conversationHistory.push({
-        role: "user",
-        content: userMessage.content,
-      });
-
-      const response = await supabase.functions.invoke('psychologist-chat', {
-        body: { messages: conversationHistory, userTier },
-      });
-
-      if (response.error) {
-        throw new Error(response.error.message || 'Ошибка получения ответа');
-      }
-
-      const aiContent = response.data?.content;
-      
-      if (!aiContent) {
-        throw new Error('Пустой ответ от ИИ');
-      }
-
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
+    // If first message, save the greeting to DB first
+    if (isFirstMessage) {
+      const greetingMessage: ChatMessage = {
+        id: "greeting-" + Date.now().toString(),
+        session_id: session.id,
         role: "assistant",
-        content: aiContent,
-        timestamp: new Date(),
+        content: greetingContent,
+        created_at: new Date().toISOString(),
       };
-      
-      setMessages((prev) => [...prev, aiMessage]);
-      setIsTyping(false);
+      setMessages([greetingMessage]);
+      await addMessage(session.id, "assistant", greetingContent);
+    }
 
-      // Save AI message
-      if (user && convId) {
-        await saveMessage(aiMessage, convId);
+    // Add user message locally
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      session_id: session.id,
+      role: "user",
+      content: userContent,
+      created_at: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, userMessage]);
+
+    // Save user message to DB
+    await addMessage(session.id, "user", userContent);
+
+    // Prepare messages for API - include greeting if it's the first message
+    const currentMessages = isFirstMessage 
+      ? [{ role: "assistant" as const, content: greetingContent }, { role: "user" as const, content: userContent }]
+      : [...messages, userMessage].map(m => ({ role: m.role, content: m.content }));
+
+    try {
+      const response = await fetch(CHAT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          messages: currentMessages,
+          sessionId: session.id,
+          userId: user?.id,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        
+        // Handle rate limiting
+        if (errorData.error === "rate_limit_exceeded") {
+          const retryAfter = errorData.retryAfter || 3;
+          toast({
+            title: "Подождите",
+            description: errorData.message || `Пожалуйста, подождите ${retryAfter} секунд.`,
+          });
+          // Remove the user message we just added since it wasn't processed
+          setMessages(prev => prev.filter(m => m.id !== userMessage.id));
+          setIsLoading(false);
+          return;
+        }
+        
+        // Handle daily limit
+        if (errorData.error === "daily_limit_exceeded") {
+          toast({
+            title: "Лимит исчерпан",
+            description: errorData.message,
+            variant: "destructive",
+          });
+          setMessages(prev => prev.filter(m => m.id !== userMessage.id));
+          setIsLoading(false);
+          return;
+        }
+        
+        // Handle invalid message / spam
+        if (errorData.error === "invalid_message" || errorData.error === "spam_detected") {
+          toast({
+            title: "Ошибка",
+            description: errorData.message,
+            variant: "destructive",
+          });
+          setMessages(prev => prev.filter(m => m.id !== userMessage.id));
+          setIsLoading(false);
+          return;
+        }
+        
+        throw new Error(errorData.error || "Failed to get response");
       }
+
+      // Stream response
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let assistantContent = "";
+      let buffer = "";
+
+      // Add placeholder assistant message
+      const assistantMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        session_id: session.id,
+        role: "assistant",
+        content: "",
+        created_at: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, assistantMessage]);
+
+      while (reader) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        let newlineIndex: number;
+        while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+          let line = buffer.slice(0, newlineIndex);
+          buffer = buffer.slice(newlineIndex + 1);
+
+          if (line.endsWith("\r")) line = line.slice(0, -1);
+          if (line.startsWith(":") || line.trim() === "") continue;
+          if (!line.startsWith("data: ")) continue;
+
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === "[DONE]") break;
+
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) {
+              assistantContent += content;
+              setStreamingContent(assistantContent);
+              updateLastMessage(assistantContent);
+            }
+          } catch {
+            // Incomplete JSON, continue
+          }
+        }
+      }
+
+      // Save assistant message to DB
+      if (assistantContent) {
+        await addMessage(session.id, "assistant", assistantContent);
+      }
+
+      setStreamingContent("");
     } catch (error) {
-      console.error('Error getting AI response:', error);
-      setIsTyping(false);
-      toast.error("Не удалось получить ответ. Попробуйте ещё раз.");
+      console.error("Chat error:", error);
+      toast({
+        title: "Ошибка",
+        description: "Не удалось получить ответ от ИИ",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="animate-pulse text-muted-foreground">Загрузка...</div>
-      </div>
-    );
-  }
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  };
+
+  const handleNewChat = async (mode: "normal" | "replace_oldest" = "normal") => {
+    setIsCreatingChat(true);
+    try {
+      const session = await createSession({ replaceOldest: mode === "replace_oldest" });
+      if (session) {
+        setSidebarOpen(false);
+        setMessages([]);
+      }
+      return session;
+    } finally {
+      setIsCreatingChat(false);
+    }
+  };
+
+  const sessionLimit = getSessionLimit();
+  const canCreateMore = sessionLimit === Infinity || sessions.length < sessionLimit;
+
+  const INITIAL_GREETING = "Здравствуйте. Вы в Quiet Bay.\n\nЗдесь не нужно ничего объяснять правильно или сразу понимать, что с вами происходит.\nМожно быть растерянным, уставшим или не знать, с чего начать — это нормально.\n\nМы никуда не спешим.\nЯ рядом и буду идти с вами шаг за шагом.\n\nЕсли хотите, начнём очень просто:\nнапишите одну фразу о том, что сейчас больше всего ощущается внутри.";
+
+  // Show initial greeting if no messages, but use static display (not in messages array)
+  const showInitialGreeting = messages.length === 0;
+  
+  const displayMessages = showInitialGreeting ? [
+    {
+      id: "initial-greeting",
+      session_id: currentSession?.id || "",
+      role: "assistant" as const,
+      content: INITIAL_GREETING,
+      created_at: new Date().toISOString(),
+    }
+  ] : messages;
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b border-border/50">
-        <div className="container mx-auto px-4">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-4">
-              <Link to="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
-                <ArrowLeft className="w-5 h-5" />
-                <span className="text-sm">Назад</span>
-              </Link>
-              
-              {user && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowSidebar(!showSidebar)}
-                  className="flex items-center gap-2"
-                >
-                  <MessageSquare className="w-4 h-4" />
-                  <span className="hidden sm:inline">История</span>
-                </Button>
-              )}
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-              <span className="text-sm text-muted-foreground">ИИ-психолог онлайн</span>
-            </div>
-            
-            {user && (
+    <div className="min-h-screen bg-background flex">
+      {/* Sidebar */}
+      <div className={cn(
+        "fixed inset-y-0 left-0 z-50 w-72 bg-card border-r border-border transform transition-transform duration-300",
+        sidebarOpen ? "translate-x-0" : "-translate-x-full"
+      )}>
+        <div className="flex flex-col h-full">
+          <div className="p-4 border-b border-border">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium text-foreground">История чатов</span>
               <Button
                 variant="ghost"
-                size="sm"
-                onClick={handleNewConversationClick}
-                className="flex items-center gap-2"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setSidebarOpen(false)}
               >
-                <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline">Новый</span>
+                <X size={18} />
               </Button>
-            )}
-            
-            {!user && <div className="w-20" />}
-          </div>
-        </div>
-      </header>
-
-      {/* Sidebar for conversations */}
-      {showSidebar && user && (
-        <div className="fixed left-0 top-16 bottom-0 w-72 bg-background border-r border-border/50 z-40 overflow-y-auto">
-          <div className="p-4 space-y-2">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-muted-foreground">История разговоров</h3>
-              <span className="text-xs text-muted-foreground">{conversations.length}/{MAX_CONVERSATIONS}</span>
             </div>
-            {conversations.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Нет сохранённых разговоров</p>
-            ) : (
-              conversations.map((conv) => (
-                <div
-                  key={conv.id}
-                  className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${
-                    currentConversationId === conv.id 
-                      ? 'bg-primary/10 border border-primary/20' 
-                      : 'hover:bg-bay-fog/50'
-                  }`}
-                  onClick={() => {
-                    loadMessages(conv.id);
-                    setShowSidebar(false);
-                  }}
-                >
-                  <span className="text-sm truncate flex-1">{conv.title}</span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 flex-shrink-0"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteConversation(conv.id);
+            <Button 
+              onClick={() => {
+                if (canCreateMore) {
+                  handleNewChat("normal");
+                } else {
+                  setReplaceDialogOpen(true);
+                }
+              }}
+              variant="bay"
+              className="w-full gap-2 font-medium"
+              aria-disabled={isCreatingChat}
+              disabled={isCreatingChat}
+            >
+              <Plus size={18} />
+              Новый чат
+            </Button>
+
+            <AlertDialog open={replaceDialogOpen} onOpenChange={setReplaceDialogOpen}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Создать новый чат?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Лимит вашей истории — {sessionLimit} чатов. Если вы создадите новый чат, самый старый будет удалён.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Отмена</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={async () => {
+                      setReplaceDialogOpen(false);
+                      const created = await handleNewChat("replace_oldest");
+                      if (created) {
+                        toast({
+                          title: "Новый чат создан",
+                          description: "Самый старый чат был удалён, чтобы освободить место.",
+                        });
+                      }
                     }}
                   >
-                    <Trash2 className="w-4 h-4 text-muted-foreground hover:text-destructive" />
-                  </Button>
-                </div>
-              ))
+                    Создать
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+
+            {!canCreateMore && (
+              <p className="text-xs text-muted-foreground mt-2 text-center">
+                Лимит: {sessionLimit} чатов
+              </p>
             )}
           </div>
-        </div>
-      )}
-
-      {/* Messages Area */}
-      <main className={`flex-1 pt-20 pb-32 overflow-y-auto ${showSidebar && user ? 'ml-72' : ''}`}>
-        <div className="container mx-auto px-4 max-w-3xl">
-          {/* Disclaimer */}
-          <div className="mb-8 p-4 rounded-xl bg-bay-warm/50 border border-bay-mist/30">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-0.5" />
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Quiet Bay не является медицинским сервисом. Если вы находитесь в кризисной ситуации 
-                  или испытываете мысли о самоповреждении, пожалуйста, обратитесь за профессиональной помощью: 
-                  телефон доверия 8-800-2000-122 (бесплатно по России).
-                </p>
-                {!user && (
-                  <p className="text-xs text-primary">
-                    <Link to="/auth" className="underline hover:no-underline">Войдите</Link>, чтобы сохранять историю разговоров
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Messages */}
-          <div className="space-y-6">
-            {messages.map((message) => (
+          
+          <div className="flex-1 overflow-y-auto p-2">
+            {sessions.map((session) => (
               <div
-                key={message.id}
-                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"} animate-fade-in`}
+                key={session.id}
+                className={cn(
+                  "group flex items-center gap-2 p-3 rounded-lg cursor-pointer hover:bg-secondary/50 transition-colors",
+                  currentSession?.id === session.id && "bg-secondary"
+                )}
+                onClick={() => {
+                  selectSession(session);
+                  setSidebarOpen(false);
+                }}
               >
-                <div
-                  className={`max-w-[80%] md:max-w-[70%] rounded-2xl px-5 py-4 ${
-                    message.role === "user"
-                      ? "bg-primary text-primary-foreground rounded-br-md"
-                      : "bg-bay-fog text-foreground rounded-bl-md"
-                  }`}
+                <MessageSquare size={16} className="text-muted-foreground flex-shrink-0" />
+                <span className="text-sm truncate flex-1">{session.title}</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteSession(session.id);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:text-destructive"
                 >
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                    {message.content}
-                  </p>
-                  <span className={`text-xs mt-2 block ${
-                    message.role === "user" ? "text-primary-foreground/60" : "text-muted-foreground"
-                  }`}>
-                    {message.timestamp.toLocaleTimeString("ru-RU", { 
-                      hour: "2-digit", 
-                      minute: "2-digit" 
-                    })}
-                  </span>
-                </div>
+                  <Trash2 size={14} />
+                </button>
               </div>
             ))}
-            
-            {/* Typing Indicator */}
-            {isTyping && (
-              <div className="flex justify-start animate-fade-in">
-                <div className="bg-bay-fog rounded-2xl rounded-bl-md px-5 py-4">
-                  <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "0ms" }} />
-                    <div className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "150ms" }} />
-                    <div className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "300ms" }} />
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            <div ref={messagesEndRef} />
           </div>
-        </div>
-      </main>
 
-      {/* Input Area */}
-      <div className={`fixed bottom-0 left-0 right-0 bg-background/80 backdrop-blur-md border-t border-border/50 ${showSidebar && user ? 'ml-72' : ''}`}>
-        <div className="container mx-auto px-4 py-4 max-w-3xl">
-          <form onSubmit={handleSubmit} className="flex items-end gap-3">
-            <div className="flex-1 relative">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSubmit(e);
-                  }
-                }}
-                placeholder={isLimitReached ? "Сервис временно недоступен..." : "Напишите, что вас беспокоит..."}
-                className="w-full px-4 py-3 rounded-xl bg-bay-fog/50 border border-bay-mist/30 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none text-foreground placeholder:text-muted-foreground transition-all duration-300 min-h-[48px] max-h-[120px]"
-                rows={1}
-                disabled={isLimitReached}
-              />
-            </div>
-            <Button
-              type="submit"
-              variant="calm"
-              size="icon"
-              className="h-12 w-12 rounded-xl flex-shrink-0"
-              disabled={!input.trim() || isTyping || isLimitReached || isSendingBlocked}
-            >
-              <Send className="w-5 h-5" />
-            </Button>
-          </form>
-          <p className="text-xs text-muted-foreground text-center mt-3">
-            Нажмите Enter для отправки • Shift+Enter для новой строки
-          </p>
+          <div className="p-4 border-t border-border">
+            <p className="text-xs text-muted-foreground text-center">
+              {subscription?.plan_name === 'yearly' ? 'Безлимитная история' : 
+               subscription ? `До ${sessionLimit} чатов` : 
+               `${sessions.length}/${sessionLimit} чатов`}
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* Warning dialog for max conversations */}
-      <AlertDialog open={showNewChatWarning} onOpenChange={setShowNewChatWarning}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Создать новый разговор?</AlertDialogTitle>
-            <AlertDialogDescription>
-              В истории чата хранится максимум {MAX_CONVERSATIONS} прошлых чата. 
-              После создания нового разговора самый старый чат будет удалён навсегда без возможности восстановления.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Отмена</AlertDialogCancel>
-            <AlertDialogAction onClick={() => {
-              setShowNewChatWarning(false);
-              createNewConversation();
-            }}>
-              Создать новый
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Overlay */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Main chat area */}
+      <div className="flex-1 flex flex-col min-h-screen">
+        {/* Header */}
+        <header className="fixed top-0 left-0 right-0 z-30 bg-background/80 backdrop-blur-md border-b border-border/50">
+          <div className="container mx-auto px-4">
+            <div className="flex items-center justify-between h-16">
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setSidebarOpen(true)}
+                >
+                  <PanelLeftOpen size={18} />
+                  <span className="hidden sm:inline">Мои чаты</span>
+                </Button>
+                <Link 
+                  to="/" 
+                  className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <ArrowLeft size={20} />
+                  <span className="text-sm font-medium hidden sm:inline">На главную</span>
+                </Link>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                <span 
+                  key={currentWordIndex}
+                  className="text-sm text-muted-foreground animate-fade-in"
+                >
+                  {MOTIVATIONAL_WORDS[currentWordIndex]}
+                </span>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Chat area */}
+        <main className="flex-1 pt-16 pb-24 overflow-hidden md:ml-0">
+          <div className="container mx-auto px-4 h-full">
+            <div className="max-w-2xl mx-auto h-full overflow-y-auto py-8">
+              {/* Privacy notice */}
+              {showInitialGreeting && (
+                <div className="text-center mb-6">
+                  <p className="text-xs text-muted-foreground bg-secondary/50 rounded-lg px-4 py-2 inline-block">
+                    🔒 Я не запоминаю личные данные и не сохраняю переписку. Вы можете быть здесь собой.
+                  </p>
+                </div>
+              )}
+              {/* Messages */}
+              <div className="space-y-6">
+                {displayMessages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                  >
+                    <div
+                      className={`max-w-[85%] rounded-2xl px-5 py-4 ${
+                        message.role === "user"
+                          ? "bg-primary text-primary-foreground rounded-br-sm"
+                          : "bg-secondary text-secondary-foreground rounded-bl-sm"
+                      }`}
+                    >
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                        {message.content}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Loading indicator */}
+                {isLoading && !streamingContent && (
+                  <div className="flex justify-start">
+                    <div className="bg-secondary rounded-2xl rounded-bl-sm px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-bay-surface animate-typing" />
+                        <div className="w-2 h-2 rounded-full bg-bay-surface animate-typing" style={{ animationDelay: "0.2s" }} />
+                        <div className="w-2 h-2 rounded-full bg-bay-surface animate-typing" style={{ animationDelay: "0.4s" }} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div ref={messagesEndRef} />
+              </div>
+            </div>
+          </div>
+        </main>
+
+        {/* Input area */}
+        <div className="fixed bottom-0 left-0 right-0 bg-background/80 backdrop-blur-md border-t border-border/50 md:left-72">
+          <div className="container mx-auto px-4 py-4">
+            <form onSubmit={handleSubmit} className="max-w-2xl mx-auto">
+              <div className="flex items-end gap-3">
+                {/* Feedback button */}
+                <FeedbackDialog 
+                  sessionId={currentSession?.id} 
+                  userId={user?.id} 
+                />
+                
+                <div className="flex-1 relative">
+                  <textarea
+                    ref={textareaRef}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Напишите ваше сообщение..."
+                    rows={1}
+                    className="w-full resize-none rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                    disabled={isLoading || cooldownActive}
+                  />
+                </div>
+                <div className="relative">
+                  <Button 
+                    type="submit" 
+                    variant="bay" 
+                    size="icon" 
+                    className="h-12 w-12 flex-shrink-0"
+                    disabled={!input.trim() || isLoading || cooldownActive}
+                  >
+                    {isLoading ? (
+                      <Loader2 size={20} className="animate-spin" />
+                    ) : cooldownActive ? (
+                      <span className="text-xs font-medium">{Math.ceil(cooldownRemainingMs / 1000)}</span>
+                    ) : (
+                      <Send size={20} />
+                    )}
+                  </Button>
+                  <CooldownIndicator 
+                    isActive={cooldownActive}
+                    totalMs={MESSAGE_COOLDOWN_MS}
+                    remainingMs={cooldownRemainingMs}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground text-center mt-3">
+                Нажмите Enter для отправки, Shift+Enter для новой строки
+              </p>
+            </form>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
