@@ -136,7 +136,7 @@ const Dashboard = () => {
         checkAdminRole(session.user.id);
       }
       setLoading(false);
-    });
+    })
 
     return () => authSub.unsubscribe();
   }, [navigate]);
@@ -214,9 +214,21 @@ const Dashboard = () => {
   };
 
   const checkAdminRole = async (userId: string) => {
-    const { data, error } = await supabase.from("user_roles").select("role").eq("user_id", userId).eq("role", "admin").maybeSingle();
-    if (!error && data) {
-      setIsAdmin(true);
+    console.log("Checking admin role for user:", userId);  // Добавим логирование
+    const { data, error } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId)
+      .eq("role", "admin")
+      .maybeSingle();
+  
+    if (error) {
+      console.error("Error fetching user role:", error);
+    } else {
+      console.log("Admin Role Data:", data); // Проверяем данные роли
+      if (data) {
+        setIsAdmin(true); // Если роль 'admin' найдена, устанавливаем isAdmin в true
+      }
     }
   };
 
@@ -573,7 +585,7 @@ const Dashboard = () => {
             </div>
 
             {/* Admin Panel - only visible for admins */}
-            {isAdmin && <AdminPanel />}
+            {isAdmin && <AdminPanel /> && <AdminReviews />}
 
             {/* Subscription Section */}
             <Collapsible open={subscriptionOpen} onOpenChange={setSubscriptionOpen}>
