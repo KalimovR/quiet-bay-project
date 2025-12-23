@@ -754,12 +754,12 @@ const Chat = () => {
         </div>
 
         {/* Chat Container */}
-        <div className={`flex-1 flex flex-col max-w-4xl mx-auto px-4 transition-all duration-300 ${showSidebar ? 'ml-64' : 'ml-0'}`}>
+        <div className={`flex-1 flex flex-col transition-all duration-300 ${showSidebar ? 'ml-64' : 'ml-0'}`}>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto space-y-4 py-6">
+          <div className="flex-1 overflow-y-auto space-y-4 py-6 max-w-4xl mx-auto w-full px-4">
             {!currentConversationId && messages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center">
+              <div className="flex flex-col items-center justify-center h-full text-center px-4">
                 <img 
                   src={alenaPortrait} 
                   alt="Алёна"
