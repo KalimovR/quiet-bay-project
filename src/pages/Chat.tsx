@@ -196,17 +196,39 @@ const Chat = () => {
     // Check if user is authenticated
     const { data: { user } } = await supabase.auth.getUser();
     
-    const { data, error } = await supabase
-      .from("chat_conversations")
-      .insert({
-        ip_address: ipAddress,
-        title: "Новый разговор",
-        user_id: user?.id || null,
-      })
-      .select()
-      .single();
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-conversation`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          ipAddress,
+          userId: user?.id || null,
+        }),
+      });
 
-    if (error || !data) {
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create conversation');
+      }
+
+      const { conversation, welcomeMessage } = await response.json();
+
+      setCurrentConversationId(conversation.id);
+      setMessages([
+        {
+          id: welcomeMessage.id,
+          role: "assistant",
+          content: welcomeMessage.content,
+          timestamp: new Date(),
+        },
+      ]);
+
+      await loadConversations();
+      return conversation.id;
+    } catch (error) {
       console.error("Error creating conversation:", error);
       toast({
         title: "Не удалось создать чат",
@@ -216,27 +238,6 @@ const Chat = () => {
       return null;
     }
 
-    const welcomeMessage = "Я здесь.\nЗдесь можно быть любым и не подбирать слова.\nМы никуда не спешим.";
-
-    // Save welcome message to database so it persists
-    const { data: welcomeData } = await supabase.from('chat_messages').insert({
-      conversation_id: data.id,
-      role: 'assistant',
-      content: welcomeMessage,
-    }).select().single();
-
-    setCurrentConversationId(data.id);
-    setMessages([
-      {
-        id: welcomeData?.id || "welcome",
-        role: "assistant",
-        content: welcomeMessage,
-        timestamp: new Date(),
-      },
-    ]);
-
-    await loadConversations();
-    return data.id;
   };
 
   // Create new conversation (if лимит достигнут — предложить заменить самый старый чат)
