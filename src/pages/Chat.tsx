@@ -197,32 +197,28 @@ const Chat = () => {
     const { data: { user } } = await supabase.auth.getUser();
     
     try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-conversation`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: JSON.stringify({
+      const { data, error } = await supabase.functions.invoke("create-conversation", {
+        body: {
           ipAddress,
           userId: user?.id || null,
-        }),
+        },
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create conversation');
+      if (error) {
+        throw error;
       }
 
-      const { conversation, welcomeMessage } = await response.json();
-
+      const { conversation, welcomeMessage } = data as {
+        conversation: { id: string };
+        welcomeMessage: { id: string; role: "assistant"; content: string; timestamp: string };
+      };
       setCurrentConversationId(conversation.id);
       setMessages([
         {
           id: welcomeMessage.id,
           role: "assistant",
           content: welcomeMessage.content,
-          timestamp: new Date(),
+          timestamp: new Date(welcomeMessage.timestamp ?? Date.now()),
         },
       ]);
 
@@ -393,32 +389,46 @@ const Chat = () => {
 
   // Stream chat response
   const streamChat = async (userMessages: { role: string; content: string }[]) => {
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-      },
-      body: JSON.stringify({
+    const { data, error, response } = await supabase.functions.invoke("chat", {
+      body: {
         messages: userMessages,
         conversationId: currentConversationId,
         ipAddress,
-      }),
+      },
     });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      
-      // Handle rate limiting
-      if (response.status === 429) {
-        const retryAfter = errorData.retryAfter || 5;
-        throw new Error(`${errorData.error || 'Слишком много запросов'} (осталось ${retryAfter} сек.)`);
+    if (error) {
+      // Attempt to extract structured error from the HTTP response
+      const res = response;
+      if (res) {
+        let errorData: any = null;
+        try {
+          errorData = await res.clone().json();
+        } catch {
+          // ignore
+        }
+
+        // Handle rate limiting
+        if (res.status === 429) {
+          const retryAfter = errorData?.retryAfter || 5;
+          throw new Error(`${errorData?.error || "Слишком много запросов"} (осталось ${retryAfter} сек.)`);
+        }
+
+        throw new Error(errorData?.error || "Ошибка сервиса");
       }
-      
-      throw new Error(errorData.error || 'Ошибка сервиса');
+
+      throw error instanceof Error ? error : new Error("Ошибка сервиса");
     }
 
-    return response;
+    // For SSE (text/event-stream), functions-js returns the raw Response
+    if (data instanceof Response) {
+      return data;
+    }
+
+    // Fallback: if response exists, return it
+    if (response) return response;
+
+    throw new Error("Ошибка сервиса");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
