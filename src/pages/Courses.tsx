@@ -1,103 +1,230 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { User } from "@supabase/supabase-js";
-import Header from "@/components/layout/Header";
-import Footer from "@/components/layout/Footer";
-import SEO from "@/components/SEO";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import Header from "@/components/Header";
+import Footer from "@/components/Footer";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import { toast } from "sonner";
-import { Lock, Play, Clock, Check, CheckCircle, Loader2, Sparkles, Brain, Heart, Smile } from "lucide-react";
-import { usePayment } from "@/hooks/usePayment";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
+import { useActivityTracker } from "@/hooks/useActivityTracker";
+import { usePaymentFromUrl, usePaymentPolling } from "@/hooks/usePaymentPolling";
+import { supabase } from "@/integrations/supabase/client";
+import { Play, Clock, Lock, CheckCircle, Sparkles, ShoppingCart, Loader2 } from "lucide-react";
+import SEO, { courseSchema, breadcrumbSchema } from "@/components/SEO";
 
 interface Course {
   id: string;
   title: string;
   description: string;
-  lesson_number: number;
-  is_free: boolean;
   duration_minutes: number;
+  is_free: boolean;
+  lesson_number: number;
   price: number;
+  video_url?: string;
 }
 
 interface CourseProgress {
   course_id: string;
   progress_percent: number;
   completed: boolean;
+  last_video_seconds?: number;
 }
 
-const Courses = () => {
-  const [user, setUser] = useState<User | null>(null);
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [userCourseIds, setUserCourseIds] = useState<string[]>([]);
-  const [courseProgress, setCourseProgress] = useState<Record<string, CourseProgress>>({});
-  const [hasFullCourse, setHasFullCourse] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
-  const { createPayment, isLoading: isPaymentLoading } = usePayment();
+interface VideoPlayerProps {
+  src: string;
+  courseId: string;
+  onProgressUpdate: (percent: number, seconds: number) => void;
+  initialProgress: number;
+  initialSeconds: number;
+}
 
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setUser(session?.user ?? null);
-      }
-    );
+const VideoPlayer = ({ src, courseId, onProgressUpdate, initialProgress, initialSeconds }: VideoPlayerProps) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const lastSavedProgress = useRef(initialProgress);
+  const hasSetInitialTime = useRef(false);
+  const [isBuffering, setIsBuffering] = useState(true);
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-    });
+  const handleLoadedMetadata = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || hasSetInitialTime.current) return;
+    
+    // Resume from saved position
+    if (initialSeconds > 0 && initialSeconds < video.duration) {
+      video.currentTime = initialSeconds;
+    }
+    hasSetInitialTime.current = true;
+  }, [initialSeconds]);
 
-    return () => subscription.unsubscribe();
+  const handleCanPlay = useCallback(() => {
+    setIsBuffering(false);
   }, []);
+
+  const handleWaiting = useCallback(() => {
+    setIsBuffering(true);
+  }, []);
+
+  const handlePlaying = useCallback(() => {
+    setIsBuffering(false);
+  }, []);
+
+  const handleTimeUpdate = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || video.duration === 0) return;
+
+    const currentPercent = Math.round((video.currentTime / video.duration) * 100);
+    
+    // Only update if progress increased by at least 5% to avoid too many updates
+    if (currentPercent > lastSavedProgress.current && currentPercent - lastSavedProgress.current >= 5) {
+      lastSavedProgress.current = currentPercent;
+      onProgressUpdate(currentPercent, Math.floor(video.currentTime));
+    }
+  }, [onProgressUpdate]);
+
+  const handlePause = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || video.duration === 0) return;
+
+    const currentPercent = Math.round((video.currentTime / video.duration) * 100);
+    const currentSeconds = Math.floor(video.currentTime);
+    
+    // Always save position on pause
+    if (currentPercent >= lastSavedProgress.current) {
+      lastSavedProgress.current = currentPercent;
+      onProgressUpdate(currentPercent, currentSeconds);
+    }
+  }, [onProgressUpdate]);
+
+  const handleEnded = useCallback(() => {
+    onProgressUpdate(100, 0);
+    lastSavedProgress.current = 100;
+  }, [onProgressUpdate]);
+
+  return (
+    <div className="aspect-video rounded-lg overflow-hidden mb-4 bg-black relative">
+      {isBuffering && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/60 z-10">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="h-10 w-10 text-primary animate-spin" />
+            <span className="text-sm text-white/80">Загрузка видео...</span>
+          </div>
+        </div>
+      )}
+      <video
+        ref={videoRef}
+        className="w-full h-full"
+        controls
+        controlsList="nodownload"
+        preload="auto"
+        src={src}
+        onLoadedMetadata={handleLoadedMetadata}
+        onCanPlay={handleCanPlay}
+        onWaiting={handleWaiting}
+        onPlaying={handlePlaying}
+        onTimeUpdate={handleTimeUpdate}
+        onPause={handlePause}
+        onEnded={handleEnded}
+      >
+        Ваш браузер не поддерживает видео
+      </video>
+    </div>
+  );
+};
+
+const Courses = () => {
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [hasPurchasedCourse, setHasPurchasedCourse] = useState(false);
+  const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [courseProgress, setCourseProgress] = useState<Record<string, CourseProgress>>({});
+  const [currentProgress, setCurrentProgress] = useState(0);
+  
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  
+  // Payment polling after redirect
+  const { paymentId, paymentSuccess, clearPaymentFromUrl } = usePaymentFromUrl();
+  const { isPolling, startPolling } = usePaymentPolling({
+    paymentId,
+    onSuccess: (result) => {
+      setHasPurchasedCourse(true);
+      clearPaymentFromUrl();
+      toast({
+        title: "Курс активирован!",
+        description: "Все уроки теперь доступны",
+      });
+    },
+    onError: () => {
+      clearPaymentFromUrl();
+    },
+  });
+  
+  // Track course viewing activity when a course is selected
+  useActivityTracker(selectedCourse ? 'watching_course' : 'online', 
+    selectedCourse ? { course_id: selectedCourse.id } : {});
 
   useEffect(() => {
     fetchCourses();
-  }, []);
-
-  useEffect(() => {
     if (user) {
-      fetchUserData(user.id);
-    } else {
-      setUserCourseIds([]);
-      setHasFullCourse(false);
-      setCourseProgress({});
+      fetchPurchaseStatus();
+      fetchCourseProgress();
     }
   }, [user]);
+
+  // Start polling if we came back from payment
+  useEffect(() => {
+    if (paymentSuccess && user) {
+      startPolling();
+      // Also do an immediate refetch
+      fetchPurchaseStatus();
+    }
+  }, [paymentSuccess, user]);
+
+  useEffect(() => {
+    const lessonParam = searchParams.get("lesson");
+    if (lessonParam && courses.length > 0) {
+      const course = courses.find(c => c.lesson_number === parseInt(lessonParam));
+      if (course) {
+        setSelectedCourse(course);
+      }
+    }
+  }, [searchParams, courses]);
 
   const fetchCourses = async () => {
     const { data, error } = await supabase
       .from("courses")
       .select("*")
-      .order("lesson_number");
-    
-    if (data) {
+      .order("lesson_number", { ascending: true });
+
+    if (!error && data) {
       setCourses(data);
     }
-    setLoading(false);
+    setIsLoading(false);
   };
 
-  const fetchUserData = async (userId: string) => {
-    // Get purchased courses
-    const { data: coursesData } = await supabase
-      .from("user_courses")
+  const fetchPurchaseStatus = async () => {
+    const { data, error } = await supabase
+      .from("course_purchases")
       .select("course_id")
-      .eq("user_id", userId);
-    
-    if (coursesData && coursesData.length > 0) {
-      setUserCourseIds(coursesData.map(c => c.course_id));
-      setHasFullCourse(true); // If user has any purchased course, they have full access
-    }
+      .limit(1);
 
-    // Get course progress
-    const { data: progressData } = await supabase
+    if (!error && data && data.length > 0) {
+      setHasPurchasedCourse(true);
+    }
+  };
+
+  const fetchCourseProgress = async () => {
+    const { data, error } = await supabase
       .from("course_progress")
-      .select("course_id, progress_percent, completed")
-      .eq("user_id", userId);
-    
-    if (progressData) {
+      .select("course_id, progress_percent, completed, last_video_seconds");
+
+    if (!error && data) {
       const progressMap: Record<string, CourseProgress> = {};
-      progressData.forEach(p => {
+      data.forEach((p: any) => {
         progressMap[p.course_id] = p;
       });
       setCourseProgress(progressMap);
@@ -105,270 +232,502 @@ const Courses = () => {
   };
 
   const canAccessCourse = (course: Course) => {
-    // First 2 lessons are always free
+    // First two lessons are always free
     if (course.lesson_number <= 2) return true;
-    // If user bought the course
-    if (hasFullCourse) return true;
+    // If user has purchased the course, all lessons are accessible
+    if (hasPurchasedCourse) return true;
     return false;
   };
 
   const handleCourseClick = (course: Course) => {
-    if (!user && course.lesson_number > 2) {
-      toast.info("Войдите, чтобы получить доступ к курсам");
+    if (!canAccessCourse(course)) {
+      if (!user) {
+        toast({
+          title: "Требуется авторизация",
+          description: "Войдите или зарегистрируйтесь для покупки курса",
+        });
+        navigate("/auth");
+        return;
+      }
+      toast({
+        title: "Курс не приобретён",
+        description: "Приобретите полный курс за 249 ₽",
+      });
+      return;
+    }
+    setSelectedCourse(course);
+    // Set current progress for the selected course
+    const progress = courseProgress[course.id];
+    setCurrentProgress(progress?.progress_percent || 0);
+  };
+
+  const [isPurchasing, setIsPurchasing] = useState(false);
+
+  const handlePurchaseCourse = async () => {
+    if (!user) {
+      toast({
+        title: "Требуется авторизация",
+        description: "Войдите или зарегистрируйтесь для покупки курса",
+      });
       navigate("/auth");
       return;
     }
 
-    if (canAccessCourse(course)) {
-      navigate(`/courses/${course.id}`);
-    } else {
-      toast.info("Купите курс за 249₽, чтобы получить доступ ко всем урокам");
+    setIsPurchasing(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            type: 'course',
+            itemId: courses[0]?.id, // First course as the main course
+            amount: 249,
+            description: 'Курс медитации - полный доступ (10 уроков)',
+            returnUrl: `${window.location.origin}/courses?payment=success`,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Ошибка создания платежа');
+      }
+
+      // Сохраняем payment_id для polling после редиректа
+      localStorage.setItem('pending_payment_id', data.paymentId);
+
+      // Redirect to YooKassa payment page
+      window.location.href = data.confirmationUrl;
+    } catch (error) {
+      console.error('Payment error:', error);
+      toast({
+        title: "Ошибка оплаты",
+        description: error instanceof Error ? error.message : "Попробуйте ещё раз",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPurchasing(false);
     }
   };
 
-  const handleBuyCourse = async () => {
-    if (!user) {
-      toast.info("Войдите, чтобы купить курс");
-      navigate("/auth");
-      return;
-    }
+  const updateProgress = async (courseId: string, percent: number, seconds: number = 0) => {
+    if (!user) return;
+
+    const completed = percent >= 100;
     
-    await createPayment({
-      amount: 249,
-      description: "Курс медитации — все 10 уроков",
-      productType: 'course',
-      productId: courses[0]?.id, // Will be updated to grant all courses
-      userId: user.id,
-      email: user.email || undefined
-    });
+    const { error } = await supabase
+      .from("course_progress")
+      .upsert({
+        user_id: user.id,
+        course_id: courseId,
+        progress_percent: percent,
+        completed,
+        last_video_seconds: seconds,
+        last_watched_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id,course_id'
+      });
+
+    if (!error) {
+      setCourseProgress(prev => ({
+        ...prev,
+        [courseId]: { course_id: courseId, progress_percent: percent, completed, last_video_seconds: seconds }
+      }));
+      setCurrentProgress(percent);
+    }
+  };
+
+  const getProgressColor = (progress: CourseProgress | undefined) => {
+    if (!progress) return "bg-muted";
+    if (progress.completed) return "bg-green-500";
+    return "bg-primary";
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <SEO 
-        title="Quiet Bay — Курс медитации"
-        description="10 уроков медитации для внутреннего покоя. Первые 2 урока бесплатны."
+    <div className="min-h-screen bg-background flex flex-col">
+      <SEO
+        title="Курс медитации"
+        description="Онлайн-курс медитации: 10 уроков от основ до продвинутых техник. 2 бесплатных урока. Полный курс за 249₽."
         canonical="/courses"
+        structuredData={{
+          "@context": "https://schema.org",
+          "@graph": [
+            courseSchema,
+            breadcrumbSchema([
+              { name: "Главная", url: "/" },
+              { name: "Курсы", url: "/courses" }
+            ])
+          ]
+        }}
       />
       <Header />
       
-      <main className="pt-24 md:pt-32 pb-24">
-        <div className="container mx-auto px-4">
-          {/* Header */}
-          <div className="text-center max-w-3xl mx-auto mb-12">
-            <span className="text-sm font-medium text-primary uppercase tracking-wider mb-4 block">
-              Медитация
-            </span>
-            <h1 className="font-heading text-4xl md:text-5xl font-semibold text-foreground mb-6">
+      <main className="flex-1 pt-24 pb-12">
+        {/* Hero Section - Compact and elegant */}
+        <section className="container mx-auto px-4 mb-8">
+          <div className="text-center max-w-2xl mx-auto">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 mb-4">
+              <Sparkles className="h-3.5 w-3.5 text-primary" />
+              <span className="text-sm font-medium text-primary">Онлайн-курс медитации</span>
+            </div>
+            <h1 className="font-serif text-3xl md:text-4xl font-semibold mb-3 text-foreground">
               Курс медитации
             </h1>
-            <p className="text-muted-foreground text-lg mb-6">
-              10 уроков для обретения внутреннего покоя. Первые 2 урока бесплатны.
+            <p className="text-muted-foreground leading-relaxed">
+              Образовательные материалы от основ до продвинутых техник. 
+              Начните с бесплатных уроков.
             </p>
-
-            {/* Buy course button */}
-            {!hasFullCourse ? (
-              <div className="flex flex-col items-center mb-8">
-                <Button 
-                  variant="bay" 
-                  size="lg"
-                  onClick={handleBuyCourse}
-                  disabled={isPaymentLoading}
-                >
-                  {isPaymentLoading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Загрузка...
-                    </>
-                  ) : (
-                    "Купить весь курс за 249₽"
-                  )}
-                </Button>
-                <p className="text-xs text-muted-foreground/60 mt-2">Возврат средств в течение 14 дней</p>
-              </div>
-            ) : (
-              <div className="inline-flex items-center gap-2 bg-green-100 text-green-700 px-4 py-2 rounded-full mb-8">
-                <CheckCircle size={18} />
-                <span className="font-medium">Курс куплен — все уроки доступны</span>
-              </div>
-            )}
           </div>
+        </section>
 
-          {/* Course Description */}
-          <div className="max-w-4xl mx-auto mb-16">
-            <div className="relative overflow-hidden bg-gradient-to-br from-primary/5 via-seafoam/20 to-accent/10 border border-primary/10 rounded-3xl p-8 md:p-10">
-              {/* Decorative elements */}
-              <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-primary/10 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-              <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-seafoam/30 to-transparent rounded-full blur-2xl translate-y-1/2 -translate-x-1/4" />
+        {/* Main Info Card - Combines pricing and description */}
+        <section className="container mx-auto px-4 mb-10">
+          <div className="max-w-3xl mx-auto">
+            <div className="rounded-2xl bg-gradient-to-br from-card via-card to-secondary/30 border border-border/60 overflow-hidden">
+              {/* Top section - Price and access */}
+              <div className="p-6 md:p-8 border-b border-border/40">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-primary/15">
+                      <Sparkles className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                      <h2 className="font-serif text-xl md:text-2xl font-semibold text-foreground">
+                        2 урока бесплатно
+                      </h2>
+                      <p className="text-sm text-muted-foreground">Полный курс из 10 уроков</p>
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="font-serif text-3xl font-bold text-primary">249</span>
+                    <span className="text-muted-foreground">₽</span>
+                  </div>
+                </div>
+                
+                {/* Quick info */}
+                <div className="flex flex-wrap gap-3 mt-5">
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-background/50 text-sm">
+                    <CheckCircle className="h-3.5 w-3.5 text-primary" />
+                    <span className="text-foreground/80">Цифровой продукт</span>
+                  </div>
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-background/50 text-sm">
+                    <CheckCircle className="h-3.5 w-3.5 text-primary" />
+                    <span className="text-foreground/80">Доступ сразу после оплаты</span>
+                  </div>
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-background/50 text-sm">
+                    <ShoppingCart className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-foreground/80">Отдельно от подписки</span>
+                  </div>
+                </div>
+              </div>
               
-              <div className="relative z-10">
-                {/* Header */}
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                    <Sparkles className="w-5 h-5 text-primary" />
-                  </div>
-                  <h2 className="font-heading text-2xl font-semibold text-foreground">
-                    О курсе
-                  </h2>
-                </div>
-
-                {/* Description */}
-                <div className="space-y-4 text-muted-foreground leading-relaxed mb-8">
-                  <p className="text-base md:text-lg">
-                    Курс предназначен для тех, кто хочет освоить медитацию как практический инструмент 
-                    для снижения стресса, улучшения концентрации и развития устойчивого внутреннего состояния.
-                  </p>
-                  <p>
-                    Программа построена по принципу постепенного погружения — от базовых основ 
-                    к более глубоким практикам осознанности и эмоциональной регуляции. 
-                    Подходит как для начинающих, так и для тех, кто хочет систематизировать практику.
-                  </p>
-                </div>
-
-                {/* Features grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                  <div className="flex items-start gap-4 bg-background/60 backdrop-blur-sm rounded-2xl p-4 border border-border/50">
-                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <Brain className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-foreground text-sm mb-1">Основы медитации</h4>
-                      <p className="text-muted-foreground text-sm">Фундаментальные принципы и регулярная практика</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-4 bg-background/60 backdrop-blur-sm rounded-2xl p-4 border border-border/50">
-                    <div className="w-10 h-10 rounded-xl bg-seafoam/50 flex items-center justify-center flex-shrink-0">
-                      <Sparkles className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-foreground text-sm mb-1">Дыхательные техники</h4>
-                      <p className="text-muted-foreground text-sm">Быстрое снижение напряжения и фокус внимания</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-4 bg-background/60 backdrop-blur-sm rounded-2xl p-4 border border-border/50">
-                    <div className="w-10 h-10 rounded-xl bg-accent/30 flex items-center justify-center flex-shrink-0">
-                      <Heart className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-foreground text-sm mb-1">Медитация любящей доброты</h4>
-                      <p className="text-muted-foreground text-sm">Развитие сострадания к себе и окружающим</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-4 bg-background/60 backdrop-blur-sm rounded-2xl p-4 border border-border/50">
-                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <Smile className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-foreground text-sm mb-1">Практики благодарности</h4>
-                      <p className="text-muted-foreground text-sm">Эмоциональный баланс и удовлетворённость</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Footer note */}
-                <p className="text-sm text-muted-foreground/80 text-center">
-                  Не требует специальной подготовки • Применение в повседневной жизни
+              {/* Bottom section - Course description */}
+              <div className="p-6 md:p-8 bg-background/30">
+                <h3 className="font-serif text-lg font-semibold text-foreground mb-3">О курсе</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+                  Практический курс для снижения стресса, улучшения концентрации и развития 
+                  устойчивого внутреннего состояния. Подходит для начинающих и практикующих.
                 </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="flex items-center gap-2.5 text-sm text-foreground/80">
+                    <CheckCircle className="h-4 w-4 text-primary flex-shrink-0" />
+                    <span>Основы медитации и регулярная практика</span>
+                  </div>
+                  <div className="flex items-center gap-2.5 text-sm text-foreground/80">
+                    <CheckCircle className="h-4 w-4 text-primary flex-shrink-0" />
+                    <span>Дыхательные техники</span>
+                  </div>
+                  <div className="flex items-center gap-2.5 text-sm text-foreground/80">
+                    <CheckCircle className="h-4 w-4 text-primary flex-shrink-0" />
+                    <span>Медитация любящей доброты</span>
+                  </div>
+                  <div className="flex items-center gap-2.5 text-sm text-foreground/80">
+                    <CheckCircle className="h-4 w-4 text-primary flex-shrink-0" />
+                    <span>Практики благодарности</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
+        </section>
 
-          {/* Courses grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
-            {courses.map((course) => {
-              const accessible = canAccessCourse(course);
-              const progress = courseProgress[course.id];
-              const isCompleted = progress?.completed;
-              const progressPercent = progress?.progress_percent || 0;
-              
-              return (
-                <div
-                  key={course.id}
-                  className={`relative bg-card border rounded-2xl p-6 transition-all duration-300 hover:-translate-y-1 ${
-                    accessible 
-                      ? "border-border shadow-soft hover:shadow-elevated cursor-pointer" 
-                      : "border-border/50 opacity-80"
-                  }`}
-                  onClick={() => handleCourseClick(course)}
-                >
-                  {/* Status badge */}
-                  <div className="absolute top-4 right-4">
-                    {course.lesson_number <= 2 ? (
-                      <span className="inline-flex items-center gap-1 bg-seafoam/50 text-accent-foreground px-3 py-1 rounded-full text-xs font-medium">
-                        Бесплатно
-                      </span>
-                    ) : hasFullCourse ? (
-                      <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-medium">
-                        <Check size={12} />
-                        Доступно
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 bg-muted text-muted-foreground px-3 py-1 rounded-full text-xs font-medium">
-                        <Lock size={12} />
-                        Закрыто
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Lesson number with completion indicator */}
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${
-                    isCompleted 
-                      ? "bg-green-100" 
-                      : "bg-primary/10"
-                  }`}>
-                    {isCompleted ? (
-                      <CheckCircle className="w-6 h-6 text-green-600" />
-                    ) : (
-                      <span className="font-heading text-xl font-semibold text-primary">
-                        {course.lesson_number}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Content */}
-                  <h3 className="font-heading text-lg font-semibold text-foreground mb-2">
-                    {course.title}
-                  </h3>
-                  <p className="text-muted-foreground text-sm mb-4 line-clamp-2">
-                    {course.description}
-                  </p>
-
-                  {/* Progress bar (only for accessible and started courses) */}
-                  {accessible && progressPercent > 0 && !isCompleted && (
-                    <div className="mb-4">
-                      <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                        <span>Прогресс</span>
-                        <span>{progressPercent}%</span>
+        {/* Courses Grid */}
+        <section className="container mx-auto px-4">
+          {isLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[...Array(6)].map((_, i) => (
+                <Card key={i} className="animate-pulse bg-card/50">
+                  <CardHeader>
+                    <div className="h-6 bg-muted rounded w-3/4"></div>
+                    <div className="h-4 bg-muted rounded w-1/2 mt-2"></div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-20 bg-muted rounded"></div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {courses.map((course) => {
+                const hasAccess = canAccessCourse(course);
+                const progress = courseProgress[course.id];
+                
+                return (
+                  <Card 
+                    key={course.id} 
+                    className={`bg-card/50 backdrop-blur-sm border-border/50 transition-all duration-300 hover:border-primary/50 ${
+                      !hasAccess ? "opacity-80" : ""
+                    }`}
+                  >
+                    <CardHeader>
+                      <div className="flex items-center justify-between mb-2">
+                        {hasAccess ? (
+                          progress?.completed ? (
+                            <Badge className="bg-green-500/20 text-green-600 border-green-500/30">
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Просмотрено
+                            </Badge>
+                          ) : (
+                            <Badge variant="default">Бесплатно</Badge>
+                          )
+                        ) : (
+                          <Badge variant="secondary" className="bg-muted text-muted-foreground">
+                            <Lock className="h-3 w-3 mr-1" />
+                            Закрыт
+                          </Badge>
+                        )}
+                        <span className="text-sm text-muted-foreground">
+                          Урок {course.lesson_number}
+                        </span>
                       </div>
-                      <Progress value={progressPercent} className="h-2" />
-                    </div>
-                  )}
+                      <CardTitle className="font-serif text-xl">{course.title}</CardTitle>
+                      <CardDescription className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {course.duration_minutes} минут
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-muted-foreground text-sm mb-4">
+                        {course.description}
+                      </p>
+                      
+                      {/* Progress bar for accessible courses */}
+                      {hasAccess && progress && progress.progress_percent > 0 && (
+                        <div className="mb-4">
+                          <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                            <span>Прогресс</span>
+                            <span>{progress.progress_percent}%</span>
+                          </div>
+                          <Progress 
+                            value={progress.progress_percent} 
+                            className={`h-2 ${progress.completed ? '[&>div]:bg-green-500' : ''}`}
+                          />
+                        </div>
+                      )}
+                      
+                      {hasAccess ? (
+                        <Button 
+                          className="w-full" 
+                          onClick={() => handleCourseClick(course)}
+                        >
+                          <Play className="h-4 w-4 mr-2" />
+                          {progress?.progress_percent > 0 && !progress.completed ? "Продолжить" : "Начать урок"}
+                        </Button>
+                      ) : (
+                        <Button 
+                          className="w-full" 
+                          variant="secondary"
+                          onClick={() => handleCourseClick(course)}
+                        >
+                          <Lock className="h-4 w-4 mr-2" />
+                          Закрыт
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
 
-                  {/* Meta */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                      <Clock size={14} />
-                      <span>{course.duration_minutes} мин</span>
-                    </div>
-                    
-                    {accessible && (
-                      <Button variant="ghost" size="sm" className="gap-1">
-                        <Play size={14} />
-                        Смотреть
-                      </Button>
-                    )}
-                  </div>
+          {/* Payment Status Banner */}
+          {isPolling && (
+            <div className="mt-10 max-w-xl mx-auto">
+              <div className="flex items-center justify-center gap-3 p-5 rounded-xl bg-primary/10 border border-primary/20">
+                <Loader2 className="h-5 w-5 text-primary animate-spin" />
+                <div className="text-center">
+                  <p className="font-medium text-foreground">Обрабатываем оплату...</p>
+                  <p className="text-sm text-muted-foreground">Это займёт несколько секунд</p>
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            </div>
+          )}
 
-        </div>
+          {/* YooKassa Payment Section - Compact */}
+          {!hasPurchasedCourse && !isPolling && (
+            <div className="mt-10 max-w-xl mx-auto">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 rounded-xl bg-gradient-to-r from-[#00BF96]/10 to-primary/5 border border-[#00BF96]/20">
+                <div className="text-center sm:text-left">
+                  <p className="font-medium text-foreground">Получить полный доступ</p>
+                  <p className="text-sm text-muted-foreground">10 уроков • Оплата через ЮКасса</p>
+                </div>
+                <Button 
+                  className="bg-[#00BF96] hover:bg-[#00A67E] text-white whitespace-nowrap"
+                  onClick={handlePurchaseCourse}
+                  disabled={isPurchasing}
+                >
+                  {isPurchasing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Загрузка...
+                    </>
+                  ) : (
+                    <>
+                      <ShoppingCart className="h-4 w-4 mr-2" />
+                      Оплатить 249 ₽
+                    </>
+                  )}
+                </Button>
+              </div>
+              <p className="text-center text-muted-foreground/60 text-xs mt-3">
+                Возврат средств возможен в течение 14 дней с момента покупки
+              </p>
+            </div>
+          )}
+
+          {/* Success Banner */}
+          {hasPurchasedCourse && (
+            <div className="mt-10 max-w-xl mx-auto">
+              <div className="flex items-center justify-center gap-3 p-5 rounded-xl bg-green-500/10 border border-green-500/20">
+                <CheckCircle className="h-5 w-5 text-green-500" />
+                <div className="text-center">
+                  <p className="font-medium text-foreground">Курс приобретён!</p>
+                  <p className="text-sm text-muted-foreground">Все 10 уроков теперь доступны</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* CTA Section - Simplified */}
+        <section className="container mx-auto px-4 mt-12">
+          <div className="max-w-xl mx-auto text-center p-6 rounded-xl bg-card/50 border border-border/40">
+            <h2 className="font-serif text-xl font-semibold mb-2 text-foreground">
+              Нужна поддержка ассистента?
+            </h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Оформите подписку для безлимитного общения. Курсы приобретаются отдельно.
+            </p>
+            <Button variant="outline" onClick={() => navigate("/pricing")}>
+              Посмотреть тарифы
+            </Button>
+          </div>
+        </section>
       </main>
 
+      {/* Course Player Dialog */}
+      <Dialog open={!!selectedCourse} onOpenChange={() => setSelectedCourse(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-serif text-2xl">
+              Урок {selectedCourse?.lesson_number}: {selectedCourse?.title}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedCourse?.description}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-8">
+            {selectedCourse && canAccessCourse(selectedCourse) ? (
+              <>
+                {selectedCourse.video_url ? (
+                  <VideoPlayer
+                    src={selectedCourse.video_url}
+                    courseId={selectedCourse.id}
+                    onProgressUpdate={(percent, seconds) => updateProgress(selectedCourse.id, percent, seconds)}
+                    initialProgress={currentProgress}
+                    initialSeconds={courseProgress[selectedCourse.id]?.last_video_seconds || 0}
+                  />
+                ) : (
+                  <div className="aspect-video bg-secondary/30 rounded-lg flex items-center justify-center mb-4">
+                    <div className="text-center">
+                      <Play className="h-16 w-16 mx-auto text-primary mb-4" />
+                      <p className="text-muted-foreground">
+                        Видео скоро будет добавлено
+                      </p>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Progress controls in dialog */}
+                {user && (
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between text-sm text-muted-foreground mb-2">
+                      <span>Прогресс просмотра</span>
+                      <span className={currentProgress >= 100 ? "text-green-500 font-medium" : ""}>
+                        {currentProgress}%
+                      </span>
+                    </div>
+                    <Progress 
+                      value={currentProgress} 
+                      className={`h-3 mb-3 ${currentProgress >= 100 ? '[&>div]:bg-green-500' : ''}`}
+                    />
+                    <div className="flex gap-2 justify-center">
+                      <Button 
+                        size="sm" 
+                        className={currentProgress >= 100 ? "bg-green-500 hover:bg-green-600" : ""}
+                        onClick={() => updateProgress(selectedCourse.id, 100)}
+                      >
+                        <CheckCircle className="h-4 w-4 mr-1" />
+                        Завершить
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="aspect-video bg-secondary/30 rounded-lg flex items-center justify-center mb-4">
+                <div className="text-center">
+                  <Lock className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-foreground font-medium mb-2">
+                    Этот урок ещё не приобретён
+                  </p>
+                  <p className="text-muted-foreground mb-4">
+                    Приобретите полный курс за 249 ₽
+                  </p>
+                  <Button onClick={handlePurchaseCourse} disabled={isPurchasing}>
+                    <ShoppingCart className="h-4 w-4 mr-2" />
+                    {isPurchasing ? "Загрузка..." : "Купить курс"}
+                  </Button>
+                </div>
+              </div>
+            )}
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <Clock className="h-4 w-4" />
+                Длительность: {selectedCourse?.duration_minutes} минут
+              </span>
+              {selectedCourse && canAccessCourse(selectedCourse) ? (
+                <Badge className={courseProgress[selectedCourse.id]?.completed ? "bg-green-500/20 text-green-600" : ""}>
+                  {courseProgress[selectedCourse.id]?.completed ? "Просмотрено" : "Доступен"}
+                </Badge>
+              ) : (
+                <Badge variant="secondary">Закрыт</Badge>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      
       <Footer />
     </div>
   );

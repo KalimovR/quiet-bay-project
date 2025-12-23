@@ -1,10 +1,25 @@
-project_id = "csdkyyvkgboxywadyckr"
+project_id = "ntvrnooshevirjeejvqn"
 
 [functions.chat]
 verify_jwt = false
 
-[functions.chat-sessions]
+[functions.usage-tracking]
 verify_jwt = false
 
-[functions.yookassa-payment]
+[functions.chat-conversation-delete]
+verify_jwt = false
+
+[functions.create-payment]
+verify_jwt = false
+
+[functions.yokassa-webhook]
+verify_jwt = false
+
+[functions.check-payment-status]
+verify_jwt = false
+
+[functions.generate-session-summary]
+verify_jwt = false
+
+[functions.extract-memory]
 verify_jwt = false
