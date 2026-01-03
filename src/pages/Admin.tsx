@@ -1,995 +1,1168 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { useToast } from "@/hooks/use-toast";
-import { Progress } from "@/components/ui/progress";
-import { 
-  Users, 
-  MessageCircle, 
-  BookOpen, 
-  Crown, 
-  Activity,
-  Gift,
-  Star,
-  ShieldAlert,
-  Trash2,
-  BarChart3,
-  TrendingUp,
-  TrendingDown,
-  AlertTriangle,
-  Clock,
-  MessageSquare,
-  UserX,
-  Zap
-} from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Edit, Trash2, Eye, EyeOff, Users, FileText, Sparkles, Loader2, Link2, ExternalLink, MessageSquare, Mail, Search } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
+import { Layout } from '@/components/layout/Layout';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { AIGenerationProgress } from '@/components/admin/AIGenerationProgress';
+import { ModerationTab } from '@/components/admin/ModerationTab';
+import { SubmissionsTab } from '@/components/admin/SubmissionsTab';
+import { OnlineUsersIndicator } from '@/components/admin/OnlineUsersIndicator';
 
-interface UserProfile {
+interface Article {
   id: string;
+  slug: string;
+  title: string;
+  excerpt: string | null;
+  content: string | null;
+  image_url: string | null;
+  category: string;
+  tags: string[];
+  author_name: string | null;
+  read_time: string | null;
+  is_featured: boolean;
+  is_published: boolean;
+  published_at: string | null;
+  created_at: string;
+}
+
+interface UserWithRole {
+  id: string;
+  user_id: string;
   email: string;
   display_name: string | null;
-  avatar_url: string | null;
+  role: 'admin' | 'editor' | 'user';
+}
+
+interface AISource {
+  id: string;
+  name: string;
+  url: string;
+  description: string | null;
+  is_active: boolean;
   created_at: string;
 }
 
-interface Course {
-  id: string;
-  title: string;
-  lesson_number: number;
-}
-
-interface UserActivity {
-  user_id: string;
-  activity_type: string;
-  last_seen_at: string;
-}
-
-interface ChatReview {
-  id: string;
-  ip_address: string;
-  user_id: string | null;
-  rating: number;
-  message: string | null;
-  image_url: string | null;
-  created_at: string;
-}
-
-interface SpamLog {
-  id: string;
-  ip_address: string;
-  reason: string;
-  user_agent: string | null;
-  created_at: string;
-}
-
-interface ChatSignals {
-  totalConversations: number;
-  totalMessages: number;
-  avgMessagesPerConversation: number;
-  shortConversations: number; // <= 2 messages (stuck at start)
-  mediumConversations: number; // 3-10 messages
-  longConversations: number; // > 10 messages
-  abandonedRate: number; // % of conversations with only 1 user message
-  avgConversationLength: number;
-  todayConversations: number;
-  weekConversations: number;
-  conversationsWithManyMessages: number; // possible crisis indicators
-}
+type GenerationStep = 'idle' | 'text' | 'image' | 'saving' | 'done' | 'error';
 
 const Admin = () => {
-  const { user, isAdmin, loading } = useAuth();
+  const { user, isAdminOrEditor, isAdmin, isLoading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [users, setUsers] = useState<UserWithRole[]>([]);
+  const [sources, setSources] = useState<AISource[]>([]);
+  const [isLoadingData, setIsLoadingData] = useState(true);
+  const [editingArticle, setEditingArticle] = useState<Article | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [aiTopic, setAiTopic] = useState('');
+  const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  const [aiCategory, setAiCategory] = useState<'news' | 'analytics' | 'opinions'>('news');
   
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [activities, setActivities] = useState<UserActivity[]>([]);
-  const [reviews, setReviews] = useState<ChatReview[]>([]);
-  const [spamLogs, setSpamLogs] = useState<SpamLog[]>([]);
-  const [signals, setSignals] = useState<ChatSignals | null>(null);
-  const [signalsLoading, setSignalsLoading] = useState(true);
-  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
-  const [grantDialogOpen, setGrantDialogOpen] = useState(false);
-  const [grantType, setGrantType] = useState<'course' | 'subscription'>('course');
-  const [selectedCourseId, setSelectedCourseId] = useState<string>('');
-  const [selectedPlan, setSelectedPlan] = useState<string>('');
-  const [durationValue, setDurationValue] = useState<string>('1');
-  const [durationUnit, setDurationUnit] = useState<string>('months');
-  const [selectedReviewImage, setSelectedReviewImage] = useState<string | null>(null);
+  // Progress tracking state
+  const [generationStep, setGenerationStep] = useState<GenerationStep>('idle');
+  const [generatedTitle, setGeneratedTitle] = useState<string>('');
+  const [generationError, setGenerationError] = useState<string>('');
   
-  useEffect(() => {
-    if (!loading && (!user || !isAdmin)) {
-      navigate("/");
-    }
-  }, [user, isAdmin, loading, navigate]);
+  // Source management state
+  const [editingSource, setEditingSource] = useState<AISource | null>(null);
+  const [sourceDialogOpen, setSourceDialogOpen] = useState(false);
+  const [sourceForm, setSourceForm] = useState({
+    name: '',
+    url: '',
+    description: '',
+    is_active: true,
+  });
+
+  // Articles filtering state
+  const [articlesSearchQuery, setArticlesSearchQuery] = useState('');
+  const [articlesCategoryFilter, setArticlesCategoryFilter] = useState<'all' | 'news' | 'analytics' | 'opinions'>('all');
+  // Article form state
+  const [formData, setFormData] = useState({
+    title: '',
+    slug: '',
+    excerpt: '',
+    content: '',
+    image_url: '',
+    category: 'news',
+    tags: '',
+    author_name: '',
+    read_time: '5 мин',
+    is_featured: false,
+    is_published: false,
+  });
 
   useEffect(() => {
-    if (isAdmin) {
-      fetchUsers();
-      fetchCourses();
-      fetchActivities();
-      fetchReviews();
-      fetchSpamLogs();
-      fetchChatSignals();
-      
-      // Subscribe to realtime activity updates
-      const channel = supabase
-        .channel('admin-activity')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'user_activity' },
-          () => {
-            fetchActivities();
-          }
-        )
-        .subscribe();
-      
-      return () => {
-        supabase.removeChannel(channel);
-      };
+    if (!isLoading && !user) {
+      navigate('/auth');
+    } else if (!isLoading && !isAdminOrEditor) {
+      navigate('/');
+      toast({
+        title: 'Доступ запрещён',
+        description: 'У вас нет прав для доступа к админ-панели',
+        variant: 'destructive',
+      });
     }
-  }, [isAdmin]);
+  }, [user, isAdminOrEditor, isLoading, navigate, toast]);
+
+  useEffect(() => {
+    if (isAdminOrEditor) {
+      fetchArticles();
+      if (isAdmin) {
+        fetchUsers();
+        fetchSources();
+      }
+    }
+  }, [isAdminOrEditor, isAdmin]);
+
+  const fetchArticles = async () => {
+    const { data, error } = await supabase
+      .from('articles')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching articles:', error);
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось загрузить статьи',
+        variant: 'destructive',
+      });
+    } else {
+      setArticles(data || []);
+    }
+    setIsLoadingData(false);
+  };
 
   const fetchUsers = async () => {
-    const { data, error } = await supabase.rpc('get_all_profiles_for_admin');
-    if (!error && data) {
-      setUsers(data as UserProfile[]);
-    }
-  };
+    const { data: profiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('*');
 
-  const fetchCourses = async () => {
-    const { data, error } = await supabase
-      .from('courses')
-      .select('id, title, lesson_number')
-      .order('lesson_number');
-    if (!error && data) {
-      setCourses(data);
+    if (profilesError) {
+      console.error('Error fetching profiles:', profilesError);
+      return;
     }
-  };
 
-  const fetchActivities = async () => {
-    const { data, error } = await supabase
-      .from('user_activity')
-      .select('*')
-      .gte('last_seen_at', new Date(Date.now() - 5 * 60 * 1000).toISOString());
-    if (!error && data) {
-      setActivities(data);
+    const { data: roles, error: rolesError } = await supabase
+      .from('user_roles')
+      .select('*');
+
+    if (rolesError) {
+      console.error('Error fetching roles:', rolesError);
+      return;
     }
-  };
 
-  const fetchReviews = async () => {
-    const { data, error } = await supabase
-      .from('chat_reviews')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(100);
-    if (!error && data) {
-      setReviews(data as ChatReview[]);
-    }
-  };
-
-  const fetchSpamLogs = async () => {
-    const { data, error } = await supabase
-      .from('spam_logs')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(100);
-    if (!error && data) {
-      setSpamLogs(data as SpamLog[]);
-    }
-  };
-
-  const fetchChatSignals = async () => {
-    setSignalsLoading(true);
-    try {
-      // Fetch all conversations
-      const { data: conversations, error: convError } = await supabase
-        .from('chat_conversations')
-        .select('id, created_at');
-      
-      if (convError) throw convError;
-      
-      // Fetch all messages with conversation_id
-      const { data: messages, error: msgError } = await supabase
-        .from('chat_messages')
-        .select('conversation_id, role, created_at');
-      
-      if (msgError) throw msgError;
-      
-      // Calculate signals
-      const totalConversations = conversations?.length || 0;
-      const totalMessages = messages?.length || 0;
-      
-      // Group messages by conversation
-      const messagesByConversation = new Map<string, { user: number; assistant: number }>();
-      messages?.forEach(msg => {
-        const current = messagesByConversation.get(msg.conversation_id) || { user: 0, assistant: 0 };
-        if (msg.role === 'user') current.user++;
-        else current.assistant++;
-        messagesByConversation.set(msg.conversation_id, current);
-      });
-      
-      let shortConversations = 0; // 1-2 messages (stuck)
-      let mediumConversations = 0; // 3-10 messages
-      let longConversations = 0; // > 10 messages
-      let abandonedCount = 0; // only 1 user message
-      let highMessageCount = 0; // > 20 messages (potential crisis)
-      
-      const conversationLengths: number[] = [];
-      
-      messagesByConversation.forEach(({ user, assistant }) => {
-        const total = user + assistant;
-        conversationLengths.push(total);
-        
-        if (total <= 2) shortConversations++;
-        else if (total <= 10) mediumConversations++;
-        else longConversations++;
-        
-        if (user <= 1) abandonedCount++;
-        if (total > 20) highMessageCount++;
-      });
-      
-      const avgMessagesPerConversation = totalConversations > 0 
-        ? Math.round(totalMessages / totalConversations * 10) / 10 
-        : 0;
-      
-      const abandonedRate = totalConversations > 0 
-        ? Math.round(abandonedCount / totalConversations * 100) 
-        : 0;
-      
-      const avgLength = conversationLengths.length > 0
-        ? Math.round(conversationLengths.reduce((a, b) => a + b, 0) / conversationLengths.length * 10) / 10
-        : 0;
-      
-      // Today's and week's conversations
-      const now = new Date();
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      
-      const todayConversations = conversations?.filter(c => c.created_at && c.created_at >= todayStart).length || 0;
-      const weekConversations = conversations?.filter(c => c.created_at && c.created_at >= weekAgo).length || 0;
-      
-      setSignals({
-        totalConversations,
-        totalMessages,
-        avgMessagesPerConversation,
-        shortConversations,
-        mediumConversations,
-        longConversations,
-        abandonedRate,
-        avgConversationLength: avgLength,
-        todayConversations,
-        weekConversations,
-        conversationsWithManyMessages: highMessageCount
-      });
-    } catch (error) {
-      console.error('Error fetching chat signals:', error);
-    } finally {
-      setSignalsLoading(false);
-    }
-  };
-
-  const deleteReview = async (reviewId: string) => {
-    const { error } = await supabase
-      .from('chat_reviews')
-      .delete()
-      .eq('id', reviewId);
-    
-    if (error) {
-      toast({
-        variant: "destructive",
-        title: "Ошибка",
-        description: "Не удалось удалить отзыв"
-      });
-    } else {
-      toast({ title: "Отзыв удалён" });
-      fetchReviews();
-    }
-  };
-
-  const handleGrantCourse = async () => {
-    if (!selectedUser || !selectedCourseId) return;
-    
-    const { error } = await supabase.rpc('admin_grant_course', {
-      _user_id: selectedUser.id,
-      _course_id: selectedCourseId
+    const usersWithRoles: UserWithRole[] = (profiles || []).map((profile) => {
+      const userRole = roles?.find((r) => r.user_id === profile.user_id);
+      return {
+        ...profile,
+        role: (userRole?.role || 'user') as 'admin' | 'editor' | 'user',
+      };
     });
-    
+
+    setUsers(usersWithRoles);
+  };
+
+  const fetchSources = async () => {
+    const { data, error } = await supabase
+      .from('ai_sources')
+      .select('*')
+      .order('name');
+
     if (error) {
-      toast({
-        variant: "destructive",
-        title: "Ошибка",
-        description: error.message
-      });
+      console.error('Error fetching sources:', error);
     } else {
-      toast({
-        title: "Успешно",
-        description: `Курс выдан пользователю ${selectedUser.display_name || selectedUser.email}`
-      });
-      setGrantDialogOpen(false);
+      setSources(data || []);
     }
   };
 
-  const handleGrantSubscription = async () => {
-    if (!selectedUser || !selectedPlan) return;
-    
-    const { error } = await supabase.rpc('admin_grant_subscription', {
-      _user_id: selectedUser.id,
-      _plan: selectedPlan,
-      _duration_value: parseInt(durationValue),
-      _duration_unit: durationUnit
+  const resetSourceForm = () => {
+    setSourceForm({
+      name: '',
+      url: '',
+      description: '',
+      is_active: true,
     });
-    
-    const unitLabels: Record<string, string> = {
-      hours: 'ч.',
-      days: 'дн.',
-      weeks: 'нед.',
-      months: 'мес.',
-      years: 'г.'
+    setEditingSource(null);
+  };
+
+  const handleCreateOrUpdateSource = async () => {
+    if (!sourceForm.name || !sourceForm.url) {
+      toast({
+        title: 'Ошибка',
+        description: 'Название и URL обязательны',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const sourceData = {
+      name: sourceForm.name,
+      url: sourceForm.url,
+      description: sourceForm.description || null,
+      is_active: sourceForm.is_active,
     };
-    
-    if (error) {
-      toast({
-        variant: "destructive",
-        title: "Ошибка",
-        description: error.message
-      });
+
+    if (editingSource) {
+      const { error } = await supabase
+        .from('ai_sources')
+        .update(sourceData)
+        .eq('id', editingSource.id);
+
+      if (error) {
+        toast({
+          title: 'Ошибка',
+          description: error.message,
+          variant: 'destructive',
+        });
+      } else {
+        toast({ title: 'Источник обновлён' });
+        fetchSources();
+        setSourceDialogOpen(false);
+        resetSourceForm();
+      }
     } else {
-      toast({
-        title: "Успешно",
-        description: `Подписка ${selectedPlan} выдана на ${durationValue} ${unitLabels[durationUnit]}`
-      });
-      setGrantDialogOpen(false);
+      const { error } = await supabase.from('ai_sources').insert(sourceData);
+
+      if (error) {
+        toast({
+          title: 'Ошибка',
+          description: error.message,
+          variant: 'destructive',
+        });
+      } else {
+        toast({ title: 'Источник добавлен' });
+        fetchSources();
+        setSourceDialogOpen(false);
+        resetSourceForm();
+      }
     }
   };
 
-  const openGrantDialog = (user: UserProfile, type: 'course' | 'subscription') => {
-    setSelectedUser(user);
-    setGrantType(type);
-    setGrantDialogOpen(true);
+  const handleEditSource = (source: AISource) => {
+    setEditingSource(source);
+    setSourceForm({
+      name: source.name,
+      url: source.url,
+      description: source.description || '',
+      is_active: source.is_active,
+    });
+    setSourceDialogOpen(true);
   };
 
-  const onlineCount = activities.length;
-  const watchingCourseCount = activities.filter(a => a.activity_type === 'watching_course').length;
-  const chattingCount = activities.filter(a => a.activity_type === 'chatting').length;
+  const handleDeleteSource = async (id: string) => {
+    if (!confirm('Удалить источник?')) return;
 
-  // Calculate average rating
-  const avgRating = reviews.length > 0 
-    ? Math.round(reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length * 10) / 10
-    : 0;
+    const { error } = await supabase.from('ai_sources').delete().eq('id', id);
 
-  if (loading) {
+    if (error) {
+      toast({
+        title: 'Ошибка',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } else {
+      toast({ title: 'Источник удалён' });
+      fetchSources();
+    }
+  };
+
+  const handleToggleSourceActive = async (source: AISource) => {
+    const { error } = await supabase
+      .from('ai_sources')
+      .update({ is_active: !source.is_active })
+      .eq('id', source.id);
+
+    if (error) {
+      toast({
+        title: 'Ошибка',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } else {
+      fetchSources();
+    }
+  };
+
+  const generateSlug = (title: string) => {
+    return title
+      .toLowerCase()
+      .replace(/[^a-zа-яё0-9\s]/gi, '')
+      .replace(/\s+/g, '-')
+      .substring(0, 50) + '-' + Date.now().toString(36);
+  };
+
+  const resetForm = () => {
+    setFormData({
+      title: '',
+      slug: '',
+      excerpt: '',
+      content: '',
+      image_url: '',
+      category: 'news',
+      tags: '',
+      author_name: '',
+      read_time: '5 мин',
+      is_featured: false,
+      is_published: false,
+    });
+    setEditingArticle(null);
+  };
+
+  const handleCreateOrUpdate = async () => {
+    if (!formData.title) {
+      toast({
+        title: 'Ошибка',
+        description: 'Заголовок обязателен',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const articleData = {
+      title: formData.title,
+      slug: formData.slug || generateSlug(formData.title),
+      excerpt: formData.excerpt || null,
+      content: formData.content || null,
+      image_url: formData.image_url || null,
+      category: formData.category,
+      tags: formData.tags ? formData.tags.split(',').map((t) => t.trim()) : [],
+      author_name: formData.author_name || null,
+      read_time: formData.read_time || '5 мин',
+      is_featured: formData.is_featured,
+      is_published: formData.is_published,
+      published_at: formData.is_published ? new Date().toISOString() : null,
+    };
+
+    if (editingArticle) {
+      const { error } = await supabase
+        .from('articles')
+        .update(articleData)
+        .eq('id', editingArticle.id);
+
+      if (error) {
+        toast({
+          title: 'Ошибка',
+          description: error.message,
+          variant: 'destructive',
+        });
+      } else {
+        toast({ title: 'Статья обновлена' });
+        fetchArticles();
+        setIsDialogOpen(false);
+        resetForm();
+      }
+    } else {
+      const { error } = await supabase.from('articles').insert(articleData);
+
+      if (error) {
+        toast({
+          title: 'Ошибка',
+          description: error.message,
+          variant: 'destructive',
+        });
+      } else {
+        toast({ title: 'Статья создана' });
+        fetchArticles();
+        setIsDialogOpen(false);
+        resetForm();
+      }
+    }
+  };
+
+  const handleEdit = (article: Article) => {
+    setEditingArticle(article);
+    setFormData({
+      title: article.title,
+      slug: article.slug,
+      excerpt: article.excerpt || '',
+      content: article.content || '',
+      image_url: article.image_url || '',
+      category: article.category,
+      tags: article.tags?.join(', ') || '',
+      author_name: article.author_name || '',
+      read_time: article.read_time || '5 мин',
+      is_featured: article.is_featured || false,
+      is_published: article.is_published || false,
+    });
+    setIsDialogOpen(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Удалить статью?')) return;
+
+    const { error } = await supabase.from('articles').delete().eq('id', id);
+
+    if (error) {
+      toast({
+        title: 'Ошибка',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } else {
+      toast({ title: 'Статья удалена' });
+      fetchArticles();
+    }
+  };
+
+  const handleTogglePublish = async (article: Article) => {
+    const { error } = await supabase
+      .from('articles')
+      .update({
+        is_published: !article.is_published,
+        published_at: !article.is_published ? new Date().toISOString() : null,
+      })
+      .eq('id', article.id);
+
+    if (error) {
+      toast({
+        title: 'Ошибка',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } else {
+      fetchArticles();
+    }
+  };
+
+  const handleRoleChange = async (userId: string, newRole: 'admin' | 'editor' | 'user') => {
+    const { error: deleteError } = await supabase
+      .from('user_roles')
+      .delete()
+      .eq('user_id', userId);
+
+    if (deleteError) {
+      toast({
+        title: 'Ошибка',
+        description: deleteError.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const { error: insertError } = await supabase
+      .from('user_roles')
+      .insert({ user_id: userId, role: newRole });
+
+    if (insertError) {
+      toast({
+        title: 'Ошибка',
+        description: insertError.message,
+        variant: 'destructive',
+      });
+    } else {
+      toast({ title: 'Роль обновлена' });
+      fetchUsers();
+    }
+  };
+
+  const handleGenerateAI = async () => {
+    setIsGenerating(true);
+    setGenerationStep('text');
+    setGeneratedTitle('');
+    setGenerationError('');
+    setAiDialogOpen(false);
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-article`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            category: aiCategory,
+            topic: aiTopic || undefined,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response body');
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              if (data.step === 'text') {
+                setGenerationStep('text');
+              } else if (data.step === 'text_done') {
+                setGeneratedTitle(data.title || '');
+              } else if (data.step === 'image') {
+                setGenerationStep('image');
+              } else if (data.step === 'image_done') {
+                // Image completed
+              } else if (data.step === 'saving') {
+                setGenerationStep('saving');
+              } else if (data.step === 'done') {
+                setGenerationStep('done');
+                const article = data.article;
+                if (article) {
+                  setGeneratedTitle(article.title);
+                  setTimeout(() => {
+                    toast({
+                      title: 'Статья создана!',
+                      description: `"${article.title}" добавлена как черновик`,
+                    });
+                    setIsGenerating(false);
+                    setGenerationStep('idle');
+                    setAiTopic('');
+                    fetchArticles();
+                  }, 2000);
+                }
+              } else if (data.step === 'error') {
+                setGenerationStep('error');
+                setGenerationError(data.message || 'Неизвестная ошибка');
+                setTimeout(() => {
+                  setIsGenerating(false);
+                  setGenerationStep('idle');
+                }, 3000);
+              }
+            } catch (e) {
+              console.error('SSE parse error:', e);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('AI generation error:', error);
+      setGenerationStep('error');
+      setGenerationError(error instanceof Error ? error.message : 'Не удалось создать статью');
+      toast({
+        title: 'Ошибка генерации',
+        description: error instanceof Error ? error.message : 'Не удалось создать статью',
+        variant: 'destructive',
+      });
+      setTimeout(() => {
+        setIsGenerating(false);
+        setGenerationStep('idle');
+      }, 3000);
+    }
+  };
+
+  if (isLoading || isLoadingData) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="animate-pulse text-muted-foreground">Загрузка...</div>
-      </div>
+      <Layout>
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+      </Layout>
     );
   }
 
-  if (!isAdmin) {
+  if (!isAdminOrEditor) {
     return null;
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      
-      <main className="pt-24 pb-16">
-        <div className="container mx-auto px-4">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center">
-              <Crown className="w-6 h-6 text-white" />
-            </div>
+    <Layout>
+      <div className="container mx-auto py-8">
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-6">
             <div>
-              <h1 className="font-serif text-3xl font-bold text-foreground">Админ-панель</h1>
-              <p className="text-muted-foreground">Управление пользователями и аналитика</p>
+              <h1 className="text-3xl font-bold">Админ-панель</h1>
+              <p className="text-muted-foreground">Управление контентом сайта</p>
             </div>
+            <OnlineUsersIndicator />
           </div>
-
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-            <Card className="bg-card/50 border-border/50">
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Users className="w-6 h-6 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-foreground">{users.length}</p>
-                    <p className="text-sm text-muted-foreground">Всего пользователей</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-card/50 border-border/50">
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center">
-                    <Activity className="w-6 h-6 text-green-500" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-foreground">{onlineCount}</p>
-                    <p className="text-sm text-muted-foreground">Онлайн сейчас</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-card/50 border-border/50">
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center">
-                    <BookOpen className="w-6 h-6 text-blue-500" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-foreground">{watchingCourseCount}</p>
-                    <p className="text-sm text-muted-foreground">Смотрят курсы</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-card/50 border-border/50">
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full bg-purple-500/10 flex items-center justify-center">
-                    <MessageCircle className="w-6 h-6 text-purple-500" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-foreground">{chattingCount}</p>
-                    <p className="text-sm text-muted-foreground">Общаются с ИИ</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Tabs defaultValue="signals" className="space-y-6">
-            <TabsList>
-              <TabsTrigger value="signals">📊 Сигналы</TabsTrigger>
-              <TabsTrigger value="users">Пользователи</TabsTrigger>
-              <TabsTrigger value="reviews">Отзывы ({reviews.length})</TabsTrigger>
-              <TabsTrigger value="spam">Спам ({spamLogs.length})</TabsTrigger>
-            </TabsList>
-
-            {/* Signals Tab - NEW */}
-            <TabsContent value="signals">
-              <div className="space-y-6">
-                {/* Key Metrics */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Card className="bg-card/50 border-border/50">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                        <BarChart3 className="w-4 h-4" />
-                        Всего диалогов
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-3xl font-bold text-foreground">
-                        {signalsLoading ? '...' : signals?.totalConversations || 0}
-                      </p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {signals?.totalMessages || 0} сообщений
-                      </p>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="bg-card/50 border-border/50">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                        <MessageSquare className="w-4 h-4" />
-                        Ср. длина диалога
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-3xl font-bold text-foreground">
-                        {signalsLoading ? '...' : signals?.avgMessagesPerConversation || 0}
-                      </p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        сообщений на диалог
-                      </p>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="bg-card/50 border-border/50">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                        <Star className="w-4 h-4 text-amber-400" />
-                        Средняя оценка
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-3xl font-bold text-foreground">
-                        {avgRating}/10
-                      </p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        на основе {reviews.length} отзывов
-                      </p>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Patterns & Anomalies */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Conversation Distribution */}
-                  <Card className="bg-card/50 border-border/50">
-                    <CardHeader>
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <TrendingUp className="w-5 h-5 text-primary" />
-                        Распределение диалогов
-                      </CardTitle>
-                      <CardDescription>По количеству сообщений</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      {signalsLoading ? (
-                        <div className="animate-pulse space-y-3">
-                          <div className="h-8 bg-muted rounded" />
-                          <div className="h-8 bg-muted rounded" />
-                          <div className="h-8 bg-muted rounded" />
-                        </div>
-                      ) : (
-                        <>
-                          <div>
-                            <div className="flex justify-between text-sm mb-1">
-                              <span className="text-muted-foreground">🔴 Короткие (1-2 сообщ.)</span>
-                              <span className="font-medium">{signals?.shortConversations || 0}</span>
-                            </div>
-                            <Progress 
-                              value={signals?.totalConversations ? (signals.shortConversations / signals.totalConversations * 100) : 0} 
-                              className="h-2"
-                            />
-                          </div>
-                          <div>
-                            <div className="flex justify-between text-sm mb-1">
-                              <span className="text-muted-foreground">🟡 Средние (3-10 сообщ.)</span>
-                              <span className="font-medium">{signals?.mediumConversations || 0}</span>
-                            </div>
-                            <Progress 
-                              value={signals?.totalConversations ? (signals.mediumConversations / signals.totalConversations * 100) : 0} 
-                              className="h-2"
-                            />
-                          </div>
-                          <div>
-                            <div className="flex justify-between text-sm mb-1">
-                              <span className="text-muted-foreground">🟢 Длинные (&gt;10 сообщ.)</span>
-                              <span className="font-medium">{signals?.longConversations || 0}</span>
-                            </div>
-                            <Progress 
-                              value={signals?.totalConversations ? (signals.longConversations / signals.totalConversations * 100) : 0} 
-                              className="h-2"
-                            />
-                          </div>
-                        </>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  {/* Anomalies & Alerts */}
-                  <Card className="bg-card/50 border-border/50">
-                    <CardHeader>
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <AlertTriangle className="w-5 h-5 text-amber-500" />
-                        Сигналы внимания
-                      </CardTitle>
-                      <CardDescription>Паттерны и аномалии</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {signalsLoading ? (
-                        <div className="animate-pulse space-y-3">
-                          <div className="h-16 bg-muted rounded" />
-                          <div className="h-16 bg-muted rounded" />
-                        </div>
-                      ) : (
-                        <>
-                          {/* Abandoned Rate */}
-                          <div className={`p-3 rounded-lg border ${
-                            (signals?.abandonedRate || 0) > 50 
-                              ? 'bg-destructive/10 border-destructive/30' 
-                              : (signals?.abandonedRate || 0) > 30 
-                                ? 'bg-amber-500/10 border-amber-500/30'
-                                : 'bg-green-500/10 border-green-500/30'
-                          }`}>
-                            <div className="flex items-center gap-2">
-                              <UserX className={`w-5 h-5 ${
-                                (signals?.abandonedRate || 0) > 50 ? 'text-destructive' : 
-                                (signals?.abandonedRate || 0) > 30 ? 'text-amber-500' : 'text-green-500'
-                              }`} />
-                              <div>
-                                <p className="font-medium text-sm">
-                                  {signals?.abandonedRate || 0}% уходят на старте
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  Диалоги с 1 сообщением пользователя
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* High message conversations (potential crisis) */}
-                          <div className={`p-3 rounded-lg border ${
-                            (signals?.conversationsWithManyMessages || 0) > 10 
-                              ? 'bg-amber-500/10 border-amber-500/30' 
-                              : 'bg-muted/50 border-border/30'
-                          }`}>
-                            <div className="flex items-center gap-2">
-                              <Zap className={`w-5 h-5 ${
-                                (signals?.conversationsWithManyMessages || 0) > 10 ? 'text-amber-500' : 'text-muted-foreground'
-                              }`} />
-                              <div>
-                                <p className="font-medium text-sm">
-                                  {signals?.conversationsWithManyMessages || 0} интенсивных диалогов
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  Более 20 сообщений (возможно кризисное состояние)
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Short conversations indicator */}
-                          {signals && signals.shortConversations > signals.totalConversations * 0.4 && (
-                            <div className="p-3 rounded-lg border bg-destructive/10 border-destructive/30">
-                              <div className="flex items-center gap-2">
-                                <TrendingDown className="w-5 h-5 text-destructive" />
-                                <div>
-                                  <p className="font-medium text-sm">
-                                    Много застрявших на старте
-                                  </p>
-                                  <p className="text-xs text-muted-foreground">
-                                    &gt;40% диалогов — короткие. Проверьте первое сообщение бота.
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Time-based metrics */}
-                <Card className="bg-card/50 border-border/50">
-                  <CardHeader>
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Clock className="w-5 h-5 text-primary" />
-                      Активность по времени
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="text-center p-4 rounded-lg bg-muted/30">
-                        <p className="text-2xl font-bold text-foreground">
-                          {signalsLoading ? '...' : signals?.todayConversations || 0}
-                        </p>
-                        <p className="text-sm text-muted-foreground">Сегодня</p>
-                      </div>
-                      <div className="text-center p-4 rounded-lg bg-muted/30">
-                        <p className="text-2xl font-bold text-foreground">
-                          {signalsLoading ? '...' : signals?.weekConversations || 0}
-                        </p>
-                        <p className="text-sm text-muted-foreground">За неделю</p>
-                      </div>
-                      <div className="text-center p-4 rounded-lg bg-muted/30">
-                        <p className="text-2xl font-bold text-foreground">
-                          {signalsLoading ? '...' : Math.round((signals?.weekConversations || 0) / 7)}
-                        </p>
-                        <p className="text-sm text-muted-foreground">В среднем/день</p>
-                      </div>
-                      <div className="text-center p-4 rounded-lg bg-muted/30">
-                        <p className="text-2xl font-bold text-foreground">
-                          {spamLogs.length}
-                        </p>
-                        <p className="text-sm text-muted-foreground">Попыток спама</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Button 
-                  variant="outline" 
-                  onClick={fetchChatSignals}
-                  disabled={signalsLoading}
-                >
-                  🔄 Обновить сигналы
+          <div className="flex items-center gap-2">
+            {/* AI Generation Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="gap-2">
+                  <Sparkles className="w-4 h-4" />
+                  AI Статья
                 </Button>
-              </div>
-            </TabsContent>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => { setAiCategory('news'); setAiDialogOpen(true); }}>
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  + Новая AI Новость
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setAiCategory('analytics'); setAiDialogOpen(true); }}>
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  + Новая AI Аналитика
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setAiCategory('opinions'); setAiDialogOpen(true); }}>
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  + Новое AI Мнение
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button onClick={resetForm}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Новая статья
+                </Button>
+              </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{editingArticle ? 'Редактировать статью' : 'Новая статья'}</DialogTitle>
+                <DialogDescription>
+                  Заполните поля для {editingArticle ? 'редактирования' : 'создания'} статьи
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Заголовок *</Label>
+                  <Input
+                    value={formData.title}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    placeholder="Заголовок статьи"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>URL (slug)</Label>
+                  <Input
+                    value={formData.slug}
+                    onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
+                    placeholder="Оставьте пустым для автогенерации"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Категория</Label>
+                    <Select
+                      value={formData.category}
+                      onValueChange={(value) => setFormData({ ...formData, category: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="news">Новости</SelectItem>
+                        <SelectItem value="analytics">Аналитика</SelectItem>
+                        <SelectItem value="opinions">Мнения</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Время чтения</Label>
+                    <Input
+                      value={formData.read_time}
+                      onChange={(e) => setFormData({ ...formData, read_time: e.target.value })}
+                      placeholder="5 мин"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Краткое описание</Label>
+                  <Textarea
+                    value={formData.excerpt}
+                    onChange={(e) => setFormData({ ...formData, excerpt: e.target.value })}
+                    placeholder="Краткое описание для карточки"
+                    rows={2}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Содержание</Label>
+                  <Textarea
+                    value={formData.content}
+                    onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                    placeholder="Полный текст статьи (поддерживает Markdown)"
+                    rows={10}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>URL изображения</Label>
+                  <Input
+                    value={formData.image_url}
+                    onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
+                    placeholder="https://example.com/image.jpg"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Автор</Label>
+                    <Input
+                      value={formData.author_name}
+                      onChange={(e) => setFormData({ ...formData, author_name: e.target.value })}
+                      placeholder="Имя автора"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Теги (через запятую)</Label>
+                    <Input
+                      value={formData.tags}
+                      onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
+                      placeholder="политика, экономика"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-6">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={formData.is_featured}
+                      onCheckedChange={(checked) => setFormData({ ...formData, is_featured: checked })}
+                    />
+                    <Label>Показывать в топе</Label>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={formData.is_published}
+                      onCheckedChange={(checked) => setFormData({ ...formData, is_published: checked })}
+                    />
+                    <Label>Опубликовать</Label>
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                  Отмена
+                </Button>
+                <Button onClick={handleCreateOrUpdate}>
+                  {editingArticle ? 'Сохранить' : 'Создать'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          </div>
+
+          {/* AI Generation Dialog */}
+          <Dialog open={aiDialogOpen} onOpenChange={setAiDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                  Создать AI {aiCategory === 'news' ? 'Новость' : aiCategory === 'analytics' ? 'Аналитику' : 'Мнение'}
+                </DialogTitle>
+                <DialogDescription>
+                  ИИ Grok создаст статью на основе темы
+                </DialogDescription>
+              </DialogHeader>
+              <div className="py-4">
+                <Label htmlFor="ai-topic">Тема (необязательно)</Label>
+                <Input
+                  id="ai-topic"
+                  value={aiTopic}
+                  onChange={(e) => setAiTopic(e.target.value)}
+                  placeholder="Оставьте пустым для автовыбора темы"
+                  className="mt-2"
+                />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setAiDialogOpen(false)}>
+                  Отмена
+                </Button>
+                <Button onClick={handleGenerateAI} disabled={isGenerating}>
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Генерация...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Создать
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        <Tabs defaultValue="articles" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="articles" className="gap-2">
+              <FileText className="w-4 h-4" />
+              Статьи
+            </TabsTrigger>
+            <TabsTrigger value="moderation" className="gap-2">
+              <MessageSquare className="w-4 h-4" />
+              Модерация
+            </TabsTrigger>
+            <TabsTrigger value="submissions" className="gap-2">
+              <Mail className="w-4 h-4" />
+              Предложка
+            </TabsTrigger>
+            {isAdmin && (
+              <TabsTrigger value="users" className="gap-2">
+                <Users className="w-4 h-4" />
+                Пользователи
+              </TabsTrigger>
+            )}
+            {isAdmin && (
+              <TabsTrigger value="sources" className="gap-2">
+                <Link2 className="w-4 h-4" />
+                Источники AI
+              </TabsTrigger>
+            )}
+          </TabsList>
+
+          <TabsContent value="articles">
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <CardTitle>Все статьи</CardTitle>
+                    <CardDescription>Управление статьями, новостями и аналитикой</CardDescription>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Поиск по заголовку..."
+                        value={articlesSearchQuery}
+                        onChange={(e) => setArticlesSearchQuery(e.target.value)}
+                        className="pl-9 w-full sm:w-[250px]"
+                      />
+                    </div>
+                    <Select value={articlesCategoryFilter} onValueChange={(v) => setArticlesCategoryFilter(v as any)}>
+                      <SelectTrigger className="w-full sm:w-[150px]">
+                        <SelectValue placeholder="Категория" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Все</SelectItem>
+                        <SelectItem value="news">Новости</SelectItem>
+                        <SelectItem value="analytics">Аналитика</SelectItem>
+                        <SelectItem value="opinions">Мнения</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {(() => {
+                  const filteredArticles = articles.filter((article) => {
+                    const matchesSearch = article.title.toLowerCase().includes(articlesSearchQuery.toLowerCase());
+                    const matchesCategory = articlesCategoryFilter === 'all' || article.category === articlesCategoryFilter;
+                    return matchesSearch && matchesCategory;
+                  });
+                  
+                  if (filteredArticles.length === 0) {
+                    return (
+                      <p className="text-center text-muted-foreground py-8">
+                        {articles.length === 0 ? 'Статьи не найдены. Создайте первую статью!' : 'Нет статей по заданным фильтрам'}
+                      </p>
+                    );
+                  }
+                  
+                  return (
+                    <div className="space-y-4">
+                      {filteredArticles.map((article) => (
+                      <div
+                        key={article.id}
+                        className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-secondary/50 transition-colors"
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-medium">{article.title}</h3>
+                            <Badge variant={article.is_published ? 'default' : 'secondary'}>
+                              {article.is_published ? 'Опубликовано' : 'Черновик'}
+                            </Badge>
+                            <Badge variant="outline">{article.category}</Badge>
+                            {article.is_featured && (
+                              <Badge variant="outline" className="text-primary border-primary">
+                                В топе
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground line-clamp-1">
+                            {article.excerpt || 'Нет описания'}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {new Date(article.created_at).toLocaleDateString('ru-RU')}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleTogglePublish(article)}
+                            title={article.is_published ? 'Снять с публикации' : 'Опубликовать'}
+                          >
+                            {article.is_published ? (
+                              <EyeOff className="w-4 h-4" />
+                            ) : (
+                              <Eye className="w-4 h-4" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleEdit(article)}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          {isAdmin && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => handleDelete(article.id)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="moderation">
+            <ModerationTab />
+          </TabsContent>
+
+          <TabsContent value="submissions">
+            <SubmissionsTab />
+          </TabsContent>
+
+          {isAdmin && (
             <TabsContent value="users">
-              <Card className="bg-card/50 border-border/50">
+              <Card>
                 <CardHeader>
-                  <CardTitle>Все пользователи</CardTitle>
-                  <CardDescription>Управление курсами и подписками</CardDescription>
+                  <CardTitle>Пользователи</CardTitle>
+                  <CardDescription>Управление ролями пользователей</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ScrollArea className="h-[500px]">
-                    <div className="space-y-3">
+                  {users.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">
+                      Пользователи не найдены
+                    </p>
+                  ) : (
+                    <div className="space-y-4">
                       {users.map((u) => (
-                        <div 
-                          key={u.id} 
-                          className="flex items-center justify-between p-4 rounded-lg bg-background/50 border border-border/30"
+                        <div
+                          key={u.id}
+                          className="flex items-center justify-between p-4 border border-border rounded-lg"
                         >
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center overflow-hidden">
-                              {u.avatar_url ? (
-                                <img src={u.avatar_url} alt="" className="w-full h-full object-cover" />
-                              ) : (
-                                <Users className="w-5 h-5 text-muted-foreground" />
-                              )}
+                          <div>
+                            <p className="font-medium">{u.display_name || u.email}</p>
+                            <p className="text-sm text-muted-foreground">{u.email}</p>
+                          </div>
+                          <Select
+                            value={u.role}
+                            onValueChange={(value) =>
+                              handleRoleChange(u.user_id, value as 'admin' | 'editor' | 'user')
+                            }
+                          >
+                            <SelectTrigger className="w-32">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="user">Пользователь</SelectItem>
+                              <SelectItem value="editor">Редактор</SelectItem>
+                              <SelectItem value="admin">Админ</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+
+          {isAdmin && (
+            <TabsContent value="sources">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle>Источники для AI</CardTitle>
+                    <CardDescription>Управление источниками новостей для генерации статей</CardDescription>
+                  </div>
+                  <Dialog open={sourceDialogOpen} onOpenChange={setSourceDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button onClick={resetSourceForm}>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Добавить источник
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>{editingSource ? 'Редактировать источник' : 'Новый источник'}</DialogTitle>
+                        <DialogDescription>
+                          Добавьте источник новостей для использования AI при генерации статей
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <Label>Название *</Label>
+                          <Input
+                            value={sourceForm.name}
+                            onChange={(e) => setSourceForm({ ...sourceForm, name: e.target.value })}
+                            placeholder="Reuters, BBC News..."
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>URL *</Label>
+                          <Input
+                            value={sourceForm.url}
+                            onChange={(e) => setSourceForm({ ...sourceForm, url: e.target.value })}
+                            placeholder="https://www.reuters.com/"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Описание</Label>
+                          <Textarea
+                            value={sourceForm.description}
+                            onChange={(e) => setSourceForm({ ...sourceForm, description: e.target.value })}
+                            placeholder="Международное новостное агентство"
+                            rows={2}
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={sourceForm.is_active}
+                            onCheckedChange={(checked) => setSourceForm({ ...sourceForm, is_active: checked })}
+                          />
+                          <Label>Активен</Label>
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setSourceDialogOpen(false)}>
+                          Отмена
+                        </Button>
+                        <Button onClick={handleCreateOrUpdateSource}>
+                          {editingSource ? 'Сохранить' : 'Добавить'}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </CardHeader>
+                <CardContent>
+                  {sources.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">
+                      Источники не найдены. Добавьте первый источник!
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {sources.map((source) => (
+                        <div
+                          key={source.id}
+                          className={`flex items-center justify-between p-4 border rounded-lg transition-colors ${
+                            source.is_active ? 'border-border hover:bg-secondary/50' : 'border-border/50 bg-muted/30 opacity-60'
+                          }`}
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h3 className="font-medium">{source.name}</h3>
+                              <Badge variant={source.is_active ? 'default' : 'secondary'}>
+                                {source.is_active ? 'Активен' : 'Отключён'}
+                              </Badge>
                             </div>
-                            <div>
-                              <p className="font-medium text-foreground">
-                                {u.display_name || 'Без имени'}
-                              </p>
-                              <p className="text-sm text-muted-foreground">{u.email}</p>
-                            </div>
+                            <a
+                              href={source.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm text-primary hover:underline flex items-center gap-1"
+                            >
+                              {source.url}
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                            {source.description && (
+                              <p className="text-sm text-muted-foreground mt-1">{source.description}</p>
+                            )}
                           </div>
                           <div className="flex items-center gap-2">
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => openGrantDialog(u, 'course')}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleToggleSourceActive(source)}
+                              title={source.is_active ? 'Отключить' : 'Включить'}
                             >
-                              <BookOpen className="w-4 h-4 mr-1" />
-                              Курс
+                              {source.is_active ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             </Button>
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => openGrantDialog(u, 'subscription')}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleEditSource(source)}
                             >
-                              <Crown className="w-4 h-4 mr-1" />
-                              Подписка
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => handleDeleteSource(source.id)}
+                            >
+                              <Trash2 className="w-4 h-4" />
                             </Button>
                           </div>
                         </div>
                       ))}
                     </div>
-                  </ScrollArea>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
-
-            {/* Reviews Tab */}
-            <TabsContent value="reviews">
-              <Card className="bg-card/50 border-border/50">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Star className="w-5 h-5 text-amber-400" />
-                    Отзывы пользователей
-                  </CardTitle>
-                  <CardDescription>Оценки и отзывы о работе чата</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ScrollArea className="h-[500px]">
-                    {reviews.length === 0 ? (
-                      <p className="text-muted-foreground text-center py-8">Отзывов пока нет</p>
-                    ) : (
-                      <div className="space-y-4">
-                        {reviews.map((review) => (
-                          <div 
-                            key={review.id} 
-                            className="p-4 rounded-lg bg-background/50 border border-border/30"
-                          >
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-2">
-                                  {/* Star Rating Display */}
-                                  <div className="flex gap-0.5">
-                                    {[1,2,3,4,5,6,7,8,9,10].map((s) => (
-                                      <Star 
-                                        key={s} 
-                                        className={`w-4 h-4 ${s <= review.rating ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/20'}`} 
-                                      />
-                                    ))}
-                                  </div>
-                                  <span className="text-sm font-medium text-foreground">{review.rating}/10</span>
-                                </div>
-                                
-                                {review.message && (
-                                  <p className="text-sm text-foreground mb-2">{review.message}</p>
-                                )}
-                                
-                                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                                  <span>IP: {review.ip_address}</span>
-                                  <span>{new Date(review.created_at).toLocaleString('ru-RU')}</span>
-                                </div>
-                              </div>
-                              
-                              <div className="flex items-start gap-2">
-                                {review.image_url && (
-                                  <button
-                                    onClick={() => setSelectedReviewImage(review.image_url)}
-                                    className="w-12 h-12 rounded-lg overflow-hidden border border-border hover:border-primary/50 transition-colors"
-                                  >
-                                    <img 
-                                      src={review.image_url} 
-                                      alt="Фото отзыва" 
-                                      className="w-full h-full object-cover"
-                                    />
-                                  </button>
-                                )}
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => deleteReview(review.id)}
-                                  className="text-muted-foreground hover:text-destructive"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </ScrollArea>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* Spam Logs Tab */}
-            <TabsContent value="spam">
-              <Card className="bg-card/50 border-border/50">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <ShieldAlert className="w-5 h-5 text-destructive" />
-                    Логи спама
-                  </CardTitle>
-                  <CardDescription>Попытки спама и rate limit нарушения</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ScrollArea className="h-[500px]">
-                    {spamLogs.length === 0 ? (
-                      <p className="text-muted-foreground text-center py-8">Попыток спама не обнаружено</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {spamLogs.map((log) => (
-                          <div 
-                            key={log.id} 
-                            className="p-3 rounded-lg bg-destructive/5 border border-destructive/20"
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <Badge variant="destructive">{log.reason}</Badge>
-                                <span className="text-sm text-muted-foreground">IP: {log.ip_address}</span>
-                              </div>
-                              <span className="text-xs text-muted-foreground">
-                                {new Date(log.created_at).toLocaleString('ru-RU')}
-                              </span>
-                            </div>
-                            {log.user_agent && (
-                              <p className="text-xs text-muted-foreground mt-1 truncate">
-                                {log.user_agent}
-                              </p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </ScrollArea>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
-        </div>
-      </main>
-
-      {/* Grant Dialog */}
-      <Dialog open={grantDialogOpen} onOpenChange={setGrantDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {grantType === 'course' ? 'Выдать курс' : 'Выдать подписку'}
-            </DialogTitle>
-            <DialogDescription>
-              Пользователь: {selectedUser?.display_name || selectedUser?.email}
-            </DialogDescription>
-          </DialogHeader>
-          
-          {grantType === 'course' ? (
-            <div className="space-y-4">
-              <Select value={selectedCourseId} onValueChange={setSelectedCourseId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите курс" />
-                </SelectTrigger>
-                <SelectContent>
-                  {courses.map((course) => (
-                    <SelectItem key={course.id} value={course.id}>
-                      Урок {course.lesson_number}: {course.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button onClick={handleGrantCourse} className="w-full">
-                <Gift className="w-4 h-4 mr-2" />
-                Выдать курс
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <Select value={selectedPlan} onValueChange={setSelectedPlan}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите план" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="premium">Премиум (399₽/мес)</SelectItem>
-                  <SelectItem value="yearly">Годовой Премиум (3899₽/год)</SelectItem>
-                </SelectContent>
-              </Select>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Select value={durationValue} onValueChange={setDurationValue}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Количество" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="1">1</SelectItem>
-                      <SelectItem value="2">2</SelectItem>
-                      <SelectItem value="3">3</SelectItem>
-                      <SelectItem value="6">6</SelectItem>
-                      <SelectItem value="12">12</SelectItem>
-                      <SelectItem value="24">24</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Select value={durationUnit} onValueChange={setDurationUnit}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Единица" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="hours">Час(ов)</SelectItem>
-                      <SelectItem value="days">День(дней)</SelectItem>
-                      <SelectItem value="weeks">Неделя(ь)</SelectItem>
-                      <SelectItem value="months">Месяц(ев)</SelectItem>
-                      <SelectItem value="years">Год(лет)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <Button onClick={handleGrantSubscription} className="w-full">
-                <Crown className="w-4 h-4 mr-2" />
-                Выдать подписку
-              </Button>
-            </div>
           )}
-        </DialogContent>
-      </Dialog>
+        </Tabs>
 
-      {/* Image Preview */}
-      {selectedReviewImage && (
-        <div 
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
-          onClick={() => setSelectedReviewImage(null)}
-        >
-          <img 
-            src={selectedReviewImage} 
-            alt="Фото отзыва" 
-            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
-          />
-        </div>
-      )}
-
-      <Footer />
-    </div>
+        {/* AI Generation Progress Dialog */}
+        <AIGenerationProgress
+          isOpen={isGenerating}
+          currentStep={generationStep}
+          category={aiCategory}
+          articleTitle={generatedTitle}
+          error={generationError}
+        />
+      </div>
+    </Layout>
   );
 };
 

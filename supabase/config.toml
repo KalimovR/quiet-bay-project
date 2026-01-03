@@ -1,25 +1,7 @@
-project_id = "ntvrnooshevirjeejvqn"
+project_id = "hrwzhufsjwzglqafcasv"
 
-[functions.chat]
+[functions.generate-article]
 verify_jwt = false
 
-[functions.usage-tracking]
-verify_jwt = false
-
-[functions.chat-conversation-delete]
-verify_jwt = false
-
-[functions.create-payment]
-verify_jwt = false
-
-[functions.yokassa-webhook]
-verify_jwt = false
-
-[functions.check-payment-status]
-verify_jwt = false
-
-[functions.generate-session-summary]
-verify_jwt = false
-
-[functions.extract-memory]
+[functions.sitemap]
 verify_jwt = false
